@@ -1,0 +1,36 @@
+# Minimal, conventional Julia CI: run the full exhaustive suite on Linux.
+# Extend the matrix (windows-latest, macOS-14) once Quadmath platform coverage
+# is confirmed there; the P3109_FLOAT128=disable escape hatch exists if needed.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.6'
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.6'
+      - name: Build documentation (no deploy until deploydocs is configured)
+        run: julia docs/builddocs.jl
