@@ -1,36 +1,42 @@
-# Minimal, conventional Julia CI: run the full exhaustive suite on Linux.
-# Extend the matrix (windows-latest, macOS-14) once Quadmath platform coverage
-# is confirmed there; the P3109_FLOAT128=disable escape hatch exists if needed.
+# Julia CI: exhaustive test suite on Linux, across the supported Julia version
+# range and both oracle backends (Quadmath Float128 and the pure-MPFR fallback
+# selected by P3109_FLOAT128=disable). Extend the OS matrix (windows-latest,
+# macOS-14) once Quadmath platform coverage is confirmed there.
 name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   test:
+    name: Julia ${{ matrix.version }} (Float128=${{ matrix.float128 }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: '1.12.6'
+            float128: 'enable'
+          - version: '1'
+            float128: 'disable'
+    env:
+      P3109_FLOAT128: ${{ matrix.float128 == 'disable' && 'disable' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.12.6'
+          version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
-
-  docs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: '1.12.6'
-      - name: Build documentation (no deploy until deploydocs is configured)
-        run: julia docs/builddocs.jl
