@@ -1,6 +1,6 @@
 # Julia CI: exhaustive test suite on Linux, across the supported Julia version
 # range and both oracle backends (Quadmath Float128 and the pure-MPFR fallback
-# selected by P3109_FLOAT128=disable). Extend the OS matrix (windows-latest,
+# selected by ByteFloats_Float128=disable). Extend the OS matrix (windows-latest,
 # macOS-14) once Quadmath platform coverage is confirmed there.
 name: CI
 on:
@@ -31,7 +31,7 @@ jobs:
           - version: '1'
             float128: 'disable'
     env:
-      P3109_FLOAT128: ${{ matrix.float128 == 'disable' && 'disable' || '' }}
+      ByteFloats_Float128: ${{ matrix.float128 == 'disable' && 'disable' || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3

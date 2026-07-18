@@ -64,7 +64,7 @@ checkpoint.md  project working memory: decisions, measurements, resolutions
 ## Notes
 
 - Requires Julia 1.12. `Quadmath` is a hard dependency used only inside the
-  oracle/fallback paths; `ENV["P3109_FLOAT128"] = "disable"` (before loading)
+  oracle/fallback paths; `ENV["ByteFloats_Float128"] = "disable"` (before loading)
   selects the pure-MPFR configuration with bit-identical results.
 - **License: not yet chosen.** This tree deliberately ships without a LICENSE
   file — selecting one is a working-group decision that must precede any public

@@ -16,7 +16,7 @@ using Random: AbstractRNG, default_rng
 
 # Runtime switch (Float128 revision plan §5): every Float128 path fronts a complete
 # MPFR path with identical semantics, so disabling costs speed, never correctness.
-# Set ENV["P3109_FLOAT128"] = "disable" before loading (read in __init__).
+# Set ENV["ByteFloats_Float128"] = "disable" before loading (read in __init__).
 const _USE_FLOAT128 = Ref(true)
 @inline _f128() = _USE_FLOAT128[]
 

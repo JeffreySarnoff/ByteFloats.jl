@@ -197,4 +197,4 @@ No implicit cross-format arithmetic (promotion is to `Float64`, explicitly). No
 in-place packed arithmetic. No hidden threading (kernels are single-threaded in this
 version). `Irrational`/`Rational` inputs to `Convert` are rejected rather than
 double-rounded silently. The `Float128` machinery never changes results — disabling
-it (`P3109_FLOAT128=disable`) is a tested no-op semantically.
+it (`ByteFloats_Float128=disable`) is a tested no-op semantically.

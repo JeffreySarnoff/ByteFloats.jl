@@ -328,6 +328,6 @@ implementations must be acknowledged with an explicit `κ = NaN`. Retrieve with
 
 ## Environment switches
 
-`ENV["P3109_FLOAT128"] = "disable"` (set before `using P3109`) disables the internal
+`ENV["ByteFloats_Float128"] = "disable"` (set before `using P3109`) disables the internal
 `Float128` fast paths in favor of pure MPFR — results are bit-identical (tested);
 only build/oracle speed changes.

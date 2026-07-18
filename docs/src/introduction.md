@@ -97,7 +97,7 @@ pkg> add P3109        # once registered; from source: pkg> dev path/to/P3109
 
 Requires Julia 1.12. `Quadmath` (libquadmath's `Float128`) is a hard dependency used
 only inside the oracle and exact-fallback paths; on platforms where it misbehaves,
-`ENV["P3109_FLOAT128"] = "disable"` before loading selects the pure-MPFR configuration
+`ENV["ByteFloats_Float128"] = "disable"` before loading selects the pure-MPFR configuration
 with **identical results** (this equivalence is itself part of the test suite).
 
 ## Status and conformance

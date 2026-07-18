@@ -1,6 +1,6 @@
 # ===== ByteFloats.jl — module root (design §10.1, architecture §11)
 """
-    P3109
+    ByteFloats
 
 A conforming, performance-oriented Julia implementation of the IEEE P3109 draft
 standard for arithmetic formats for machine learning (bitwidths 3–8).
@@ -23,7 +23,7 @@ which is Julia semantics, not package overhead; a single function barrier
 the specialization properties (concrete return types, zero warm-path
 allocation) as deterministic regressions.
 """
-module P3109
+module ByteFloats
 
 using Random: Random, AbstractRNG, default_rng
 using PrecompileTools: @setup_workload, @compile_workload
@@ -127,7 +127,7 @@ end
 function __init__()
     # Float128 revision plan §5: every Float128 path fronts a complete MPFR path
     # with identical semantics; the switch trades speed only, never results.
-    if get(ENV, "P3109_FLOAT128", "") == "disable"
+    if get(ENV, "ByteFloats_Float128", "") == "disable"
         _USE_FLOAT128[] = false
     end
     nothing
