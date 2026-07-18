@@ -307,26 +307,9 @@ end
 # ---------------------------------------------------------------------------
 # wiring into Base
 # ---------------------------------------------------------------------------
-
-"""
-    install!()
-
-Define `Base.fma(::Float128, ::Float128, ::Float128) = fma128(...)`.
-Called automatically at load time when no such method exists (Windows).
-"""
-function install!()
+if Sys.iswindows()
+    import Base: fma
     @eval Base.fma(x::Float128, y::Float128, z::Float128) = fma128(x, y, z)
-    return nothing
-end
-
-function __init__()
-    # On Windows, Quadmath.jl deliberately omits the fmaq binding
-    # (https://github.com/JuliaMath/Quadmath.jl/issues/31); fill the gap.
-    # Elsewhere the native correctly-rounded fmaq already exists; leave it.
-    if !hasmethod(Base.fma, Tuple{Float128,Float128,Float128})
-        install!()
-    end
-    nothing
 end
 
 end # module

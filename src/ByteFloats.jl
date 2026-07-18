@@ -32,6 +32,9 @@ using Quadmath: Float128
 include("fma128.jl")
 using .Float128FMA          # on Windows this installs Base.fma
 
+include("faa128.jl")
+using .Float128FAA          
+
 # Include order: formats → projspec → decode_encode → project → ops_scalar →
 # oracle → tables → kernels → blocks → approx.
 # (One deliberate delta from the architecture §11 listing: the evaluation-protocol

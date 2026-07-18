@@ -37,7 +37,7 @@ using ByteFloats: project, project_interval, round_to_precision, encode, order_k
 
 const UN = collect(_UNARY_OPS)
 
-@testset "ByteFloats.jl" begin
+# @testset "ByteFloats.jl" begin
 
 # Independent reference decode straight from draft §4.7.2, in BigFloat
 function refdecode(::Type{Binary{K,P,S,E}}, c::UInt8) where {K,P,S,E}
@@ -338,6 +338,10 @@ codes8 = [rawvalue(T8, UInt8(c)) for c in 0:255]
         for opn in UN, ρ in ρ4, v in codes8
             res = ωeval(Val(opn), decode(v))
             got = apply_op(Val(opn), T8, ρ, 0, decode(v))
+            if codepoint(got) != codepoint(highprec(T8, ρ, res))
+                println("T8=$T8,op=$opn ρ=$ρ v=$(decode(v)) got=$(decode(got)) want=$(decode(highprec(T8, ρ, res)))")
+                error("exhaustive unary ×hp failed")
+            end
             @test codepoint(got) == codepoint(highprec(T8, ρ, res))
         end
     end
@@ -1158,4 +1162,4 @@ end
     @test Base.return_types(mk, Tuple{UInt8}) == [Binary5p3sf]
 end
 
-end # @testset "ByteFloats.jl"
+# end # @testset "ByteFloats.jl"
