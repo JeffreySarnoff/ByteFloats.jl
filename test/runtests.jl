@@ -29,7 +29,11 @@ using ByteFloats: project, project_interval, round_to_precision, encode, order_k
     get_table, blockdecode, _NAMED, Enclose128F, _USE_FLOAT128, _f128,
     _rtp_core, _rtp_f64, _extremal_SQ, _decode_compute, _decode_table, MaybeRNG,
     MaxFiniteOf, MinFiniteOf, MinPositiveOf, MaxSubnormalOf, MinNormalOf, formatname,
-    nan_code, posinf_code, neginf_code, maxfinite_datum
+    nan_code, posinf_code, neginf_code, maxfinite_datum,
+    get_table, _USE_FLOAT128, _f128, _UNARY_OPS, rawvalue, nan_code, TableKey,
+    rawvalue, decode, _decode_compute, _decode_table, nan_code, Rounded, KIND_FIN,
+    apply_op, MaybeRNG
+
 
 const UN = collect(_UNARY_OPS)
 
@@ -864,12 +868,7 @@ T8 = Binary8p4se; T5 = Binary5p2se
     @test occursin("κ verified exhaustively", rep) && occursin("Exp⟨", rep)
     @test occursin("Scalar operations (52)", rep)
 end
-println("approx.jl verified")
-
-# ==========================================================================
-# Float128 revision plan §7 gates
-# ==========================================================================
-    get_table, _USE_FLOAT128, _f128, _UNARY_OPS, rawvalue, nan_code, TableKey
+println("approx.jl verified") 
 
 @testset "Float128 revision plan §7" begin
     # --- carrier equivalence: project(Float64 d) ≡ project(Float128(d)),
@@ -977,8 +976,7 @@ end
 # Bit-operations revision plan gates (Phase 0, K1–K5)
 # ==========================================================================
 modes_bo = [NearestTiesToEven(), NearestTiesToAway(), TowardPositive(), TowardNegative(), TowardZero(), ToOdd()]
-             rawvalue, decode, _decode_compute, _decode_table, nan_code, Rounded, KIND_FIN,
-             apply_op, MaybeRNG
+
 @testset "bitops plan gates" begin
     # ---- K2: table ≡ compute ≡ bit-composed decode, all 13,296 code points
     for T in allfmts, c in 0x00:UInt8((1 << bitwidth(T)) - 1)
