@@ -1,6 +1,5 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-P3109 = "d8c9c1d9-02f1-47db-b5f4-183fbc58627a"
 
 [compat]
 Documenter = "1"

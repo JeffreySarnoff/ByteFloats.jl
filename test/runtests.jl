@@ -27,16 +27,13 @@ using ByteFloats: project, project_interval, round_to_precision, encode, order_k
     KIND_FIN, nan_code, posinf_code, neginf_code, signmask,
     apply_op, ωeval, BigExactF, EncloseF, OP_REGISTRY, opinfo, _UNARY_OPS,
     get_table, blockdecode, _NAMED, Enclose128F, _USE_FLOAT128, _f128,
-    _rtp_core, _rtp_f64, _extremal_SQ, _decode_compute, _decode_table, MaybeRNG
-
-@testset "ByteFloats.jl" begin
-
-
-# ==========================================================================
-# formats.jl
-# ==========================================================================
+    _rtp_core, _rtp_f64, _extremal_SQ, _decode_compute, _decode_table, MaybeRNG,
     MaxFiniteOf, MinFiniteOf, MinPositiveOf, MaxSubnormalOf, MinNormalOf, formatname,
     nan_code, posinf_code, neginf_code, maxfinite_datum
+
+const UN = collect(_UNARY_OPS)
+
+@testset "ByteFloats.jl" begin
 
 # Independent reference decode straight from draft §4.7.2, in BigFloat
 function refdecode(::Type{Binary{K,P,S,E}}, c::UInt8) where {K,P,S,E}
@@ -320,7 +317,6 @@ function highprec(T, ρ, res, R=0)
     cd
 end
 
-const UN = collect(_UNARY_OPS)
 T8 = Binary8p3se
 codes8 = [rawvalue(T8, UInt8(c)) for c in 0:255]
 ρ4 = [RNE_SatNone, ProjSpec(TowardPositive(), SatNone()),
