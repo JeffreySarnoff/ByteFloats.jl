@@ -306,6 +306,11 @@ function ωeval(::Val{:RSqrt}, x::Float64)
     x < 0.0 && return NaN
     iszero(x) && return NaN                                   # 1/√0 = 1/0 → NaN
     isinf(x) && return 0.0
+    s = sqrt(x)
+    if fma(s, s, -x) == 0.0                                   # √x exact in Float64
+        r = 1.0 / s
+        fma(r, s, -1.0) == 0.0 && return r                    # 1/√x exact too ⇔ x = 4^k
+    end
     if _f128()
         qx = Float128(x)
         s = sqrt(qx)
