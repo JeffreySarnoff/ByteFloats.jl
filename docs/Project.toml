@@ -1,0 +1,6 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+P3109 = "9b3109aa-0000-4a5b-8c6d-3109e2026001"
+
+[compat]
+Documenter = "1"

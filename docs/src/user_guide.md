@@ -1,0 +1,333 @@
+# User Guide
+
+Everything you need to use ByteFloats.jl, in the order you'll need it. All transcripts in
+this guide are captured from real sessions against the shipped package.
+
+## Formats and format queries
+
+The parametric type `Binary{K,P,SGN,EXT}` defines a format: bitwidth `K ∈ 3:8`,
+precision `P` (significand bits including the implicit bit), `SGN::Bool` for
+signed/unsigned, `EXT::Bool` for extended (with ±Inf) versus finite. Every legal
+combination — 120 formats — has its draft name exported:
+
+```julia-repl
+julia> Binary8p4se === Binary{8,4,true,true}
+true
+
+julia> formatname(Binary{6,3,true,false})
+:Binary6p3sf
+```
+
+The suffix reads: `p4` precision 4, `s`/`u` signed/unsigned, `e`/`f` extended/finite.
+
+Format introspection follows the draft's Group M, with both Julia-style and
+draft-named accessors:
+
+```julia-repl
+julia> bitwidth(Binary8p4se), precision(Binary8p4se), expbias(Binary8p4se)
+(8, 4, 8)
+
+julia> MaxFiniteOf(Binary8p4se)
+Binary8p4se(224.0 ≡ 0x7e)
+
+julia> MinPositiveOf(Binary8p4se)
+Binary8p4se(0.0009765625 ≡ 0x01)
+```
+
+Also available: `MinFiniteOf`, `MinNormalOf`, `MaxSubnormalOf`, `expbitwidth`,
+`trailingsigbits`, `issigned`, `isextended`, and the draft-named forms
+(`BitwidthOf`, `PrecisionOf`, `ExponentBiasOf`, …).
+
+## Values
+
+A value is one byte: an immutable wrapper around its code point. Four ways in, two
+ways out:
+
+```julia-repl
+julia> x = Binary8p4se(1.6)              # construct from a Real: projects (rounds)
+Binary8p4se(1.625 ≡ 0x45)
+
+julia> Binary8p4se(0x45)                 # construct from a UInt8 CODE POINT (validated)
+Binary8p4se(1.625 ≡ 0x45)
+
+julia> rawvalue(Binary8p4se, 0x45)       # same, unchecked — the kernel-internal route
+Binary8p4se(1.625 ≡ 0x45)
+
+julia> Convert(Binary8p4se, RNE_SatNone, 3)   # explicit conversion, any mode
+Binary8p4se(3.0 ≡ 0x4c)
+
+julia> decode(x)                          # exact datum as Float64 (always exact)
+1.625
+
+julia> codepoint(x)                       # the raw byte (extends Base.codepoint)
+0x45
+```
+
+!!! note "UInt8 means code point; every other number means value"
+    `UInt8` is the *only* argument type with code-point semantics — mirroring
+    `Char(0x41)`. Every other `Real` (including other `Integer`s) constructs by
+    projecting the numeric value, and `Convert` is numeric for **all** integers:
+
+    ```julia-repl
+    julia> Binary8p4se(0x02), Binary8p4se(2)
+    (Binary8p4se(0.001953125 ≡ 0x02), Binary8p4se(2.0 ≡ 0x48))
+    ```
+
+    Out-of-range codes throw for K < 8 (`Binary5p3sf(0x20)` is an error); the range
+    check costs nothing measurable — 2.1 ns, identical to unchecked `rawvalue`.
+    Round-tripping is `T(codepoint(x)) === x`.
+
+`Convert` accepts `Binary` values (any format), `Float16/32/64`, `Integer`, and
+`BigFloat` — types whose values it can project *exactly*. For other `Real`s, convert
+explicitly first (e.g. `Binary8p4se(Float64(π))`) and own the double rounding;
+`Rational` inputs throw with that guidance rather than double-round silently.
+
+Every format has exactly one NaN and no negative zero; extended formats add ±Inf:
+
+```julia-repl
+julia> Binary8p4se(1e9)                   # overflow under the default spec → +Inf
+Binary8p4se(Inf ≡ 0x7f)
+
+julia> Binary8p4se(-0.0)                  # no −0: projects to the single zero
+Binary8p4se(0.0 ≡ 0x00)
+
+julia> isnan(Binary8p4se(NaN)), isfinite(Binary8p4se(2.0))
+(true, true)
+```
+
+Standard predicates (`isnan`, `isinf`, `isfinite`, `iszero`, `signbit`, `issubnormal`),
+`zero`/`one`/`eps`/`typemin`/`typemax`, and stepping via `NextGreaterThan` /
+`NextLessThan` (the draft's Next operations; `nextfloat`/`prevfloat` alias them) all
+work:
+
+```julia-repl
+julia> NextGreaterThan(Binary8p4se(1.0))
+Binary8p4se(1.125 ≡ 0x41)
+
+julia> Class(Binary8p4se(0.01))           # draft classification
+ClassPosNormal::FPClass = 0x06
+```
+
+## Projection specifications
+
+Every rounding decision in the package is governed by a `ProjSpec`, the pair of a
+**rounding mode** and a **saturation mode**. Both are zero-size singleton types, so a
+`ProjSpec` costs nothing and fully specializes every call it reaches.
+
+Rounding modes: `NearestTiesToEven`, `NearestTiesToAway`, `TowardPositive`,
+`TowardNegative`, `TowardZero`, `ToOdd`, and the stochastic families
+`StochasticA{N}`, `StochasticB{N}`, `StochasticC{N}` with a random-bit budget
+`1 ≤ N ≤ 60`. Saturation modes: `SatFinite`, `SatPropagate`, `SatNone`.
+
+```julia-repl
+julia> ρ = ProjSpec(TowardPositive(), SatFinite())
+(TowardPositive, SatFinite)
+
+julia> RNE_SatNone, RNE_SatFinite         # the two common specs, predefined
+((NearestTiesToEven, SatNone), (NearestTiesToEven, SatFinite))
+```
+
+Rounding chooses the neighbor; saturation decides what out-of-range results become.
+Watch all three interact on an overflowing product in `Binary8p4se`
+(`MaxFinite = 224`):
+
+```julia-repl
+julia> w, two = Binary8p4se(200.0), Binary8p4se(2.0);
+
+julia> Multiply(Binary8p4se, RNE_SatNone, w, two)       # overflow → ±Inf
+Binary8p4se(Inf ≡ 0x7f)
+
+julia> Multiply(Binary8p4se, RNE_SatFinite, w, two)     # overflow → MaxFinite
+Binary8p4se(224.0 ≡ 0x7e)
+
+julia> Multiply(Binary8p4se, ProjSpec(TowardZero(), SatNone()), w, two)
+Binary8p4se(224.0 ≡ 0x7e)   # SatNone + directed-toward-zero clamps finite
+```
+
+!!! note
+    `SatNone` is not "no saturation handling": it is the draft's row set in which
+    nearest modes overflow to ±Inf (or NaN for finite formats) while directed modes
+    that point away from the overflow clamp to the extremal finite value.
+
+### Stochastic rounding
+
+Stochastic modes consume `N` random bits per projection. You control the source three
+ways — implicitly (task-local RNG), by passing an `rng`, or by fixing the draw `R`
+itself, which makes single projections exactly reproducible and is the right tool for
+tests:
+
+```julia-repl
+julia> σ = ProjSpec(StochasticA{8}(), SatNone());
+
+julia> Add(Binary8p4se, σ, Binary8p4se(2.0), Binary8p4se(0.03125); rng = Xoshiro(1))
+Binary8p4se(2.0 ≡ 0x48)
+
+julia> Add(Binary8p4se, σ, Binary8p4se(2.0), Binary8p4se(0.03125); R = 0)
+Binary8p4se(2.0 ≡ 0x48)      # smallest draw: rounds down
+
+julia> Add(Binary8p4se, σ, Binary8p4se(2.0), Binary8p4se(0.03125); R = 255)
+Binary8p4se(2.25 ≡ 0x49)     # largest draw: rounds up
+```
+
+The exact fraction here is 1/8 of an ulp, so over all 256 draws exactly 32 round up —
+`StochasticA` is unbiased in expectation. `R` must lie in `0:2^N-1`.
+
+## Scalar operations: the two registers
+
+**The spec-named register** exposes every draft operation under its draft name with an
+explicit result format and spec: `Op(fr, ρ, operands...)`. Thirty unary operations
+(`Abs`, `Negate`, `Sqrt`, `RSqrt`, `Recip`, `Exp`, `Exp2`, `ExpMinusOne`, `Log`,
+`Log2`, `LogOnePlus`, `Softplus`, the trig/hyperbolic families, the π-scaled
+families), eighteen binary (`Add`, `Subtract`, `Multiply`, `Divide`, `CopySign`,
+`Hypot`, `ArcTan2`, `ArcTan2Pi`, and the eight Minimum/Maximum variants plus the
+Finite variants), three ternary (`FMA`, `FAA`, `Clamp`), and `Convert`. Operands may
+be any formats; the result format is the first argument.
+
+**The Base register** makes each format an ordinary Julia number under its *default*
+spec (`RNE_SatNone`): `+ - * /`, `fma`, `exp`, `log`, `sqrt`, `min`, `max`, `abs`,
+`atan(y, x)`, `sinpi`, `inv`, comparisons, and friends — same-format operands only,
+no silent cross-format promotion (mixing formats promotes to `Float64` explicitly).
+
+```julia-repl
+julia> exp(Binary8p4se(0.25))                       # Base register
+Binary8p4se(1.25 ≡ 0x42)
+
+julia> Exp(Binary8p4se, RNE_SatNone, Binary8p4se(0.25))   # identical, explicit
+Binary8p4se(1.25 ≡ 0x42)
+```
+
+Semantics highlights (all per the draft): `x/0 → NaN` for every `x` including ±Inf;
+`Recip(±Inf) = 0`; `0·∞ → NaN`; a NaN operand generally propagates, except the
+`*Number`/`*Finite` extremum variants which prefer non-NaN (and finite) operands;
+trig of ±Inf is NaN; the π-scaled family reduces exactly mod 2 first.
+
+## Arrays, kernels, and sorting
+
+Every operation has array methods — `Op(fr, ρ, A)`, `Op(fr, ρ, A, B)`,
+`Op(fr, ρ, A, B, C)` — plus the generic `vmap` / `vmap!`:
+
+```julia-repl
+julia> A = Binary8p4se.(randn(Xoshiro(7), 4) .* 2)
+4-element Vector{Binary8p4se}:
+ Binary8p4se(-0.875 ≡ 0xbe)
+ Binary8p4se(4.0 ≡ 0x50)
+ Binary8p4se(-3.25 ≡ 0xcd)
+ Binary8p4se(2.25 ≡ 0x49)
+
+julia> Exp(Binary8p4se, RNE_SatNone, A)
+4-element Vector{Binary8p4se}:
+ Binary8p4se(0.40625 ≡ 0x35)
+ Binary8p4se(56.0 ≡ 0x6e)
+ Binary8p4se(0.0390625 ≡ 0x1a)
+ Binary8p4se(9.0 ≡ 0x59)
+```
+
+For pure (non-stochastic) specs, unary and binary array calls run as **table
+gathers**: the first call builds and caches a 256-byte (unary) or 64 KiB (binary)
+result table for that exact `(op, formats, ρ)` specialization, and every later
+element costs a single lookup — measured at 0.27 ns/element unary, 0.5 ns/element
+binary. Ternary and stochastic calls run the scalar pipeline per element. Inspect or
+reset the cache with `table_bytes()` and `empty_tables!()`.
+
+Sorting is special-cased: values compare through integer order keys, and vectors of
+`Binary` sort with an **O(n) counting sort** installed as the default algorithm —
+about 8× the stock comparison sort at 64 K elements, `rev=true` included. `sort(A)`
+just works; NaN sorts last (first under `rev=true`), matching Base's conventions.
+`TotalOrder(x, y)` exposes the draft's total order directly (single NaN largest).
+
+## Blocks and scaled operations
+
+A `Block{B,FS,FE}` is a scale in format `FS` and `B` elements in format `FE`; its
+represented values are `scale × element` (the MX-style scheme). Construct directly or
+quantize a tuple with the draft's algorithm, which picks the scale from the maximum
+finite |element| and projects each element against it:
+
+```julia-repl
+julia> b = Block(Binary8p1uf(4.0), Binary8p4se(1.5), Binary8p4se(-0.75),
+                 Binary8p4se(2.0), Binary8p4se(0.5))
+Block{4, Binary8p1uf, Binary8p4se}(Binary8p1uf(4.0 ≡ 0x82), (…))
+
+julia> ConvertFromBlock(Binary8p3se, RNE_SatNone, b)   # decode scale×elem, project
+(Binary8p3se(6.0 ≡ 0x4a), Binary8p3se(-3.0 ≡ 0xc6), Binary8p3se(8.0 ≡ 0x4c), Binary8p3se(2.0 ≡ 0x44))
+
+julia> BlockReduceAdd(Binary8p4se, RNE_SatNone, b)     # exact Σ scale·xᵢ, then project
+Binary8p4se(13.0 ≡ 0x5d)
+
+julia> ConvertToBlockMaxAbsFinite(Binary8p1uf, Binary8p4se, RNE_SatNone, RNE_SatNone,
+           (Binary8p4se(100.0), Binary8p4se(-12.0), Binary8p4se(0.5), Binary8p4se(3.0)))
+Block{4, Binary8p1uf, Binary8p4se}(Binary8p1uf(64.0 ≡ 0x86), (…))
+```
+
+Every scalar operation lifts to blocks (`BlockAdd`, `BlockExp`, …, taking blocks and
+a result scale) and to the scaled form `ScaledOp` (`ScaledAdd(fr, ρ, s1, x1, s2, x2)`
+— block size 1). Reductions: `BlockReduceAdd`, `BlockReduceMultiply`, and
+`BlockDotProduct(fr, ρ, bx, by)`, whose lane products and accumulation are **exact**
+before the single final projection — there is no hidden intermediate rounding.
+`ConvertToBlock(fs, fr, ρ, xs, s)` quantizes against a scale you supply.
+`BlockVector` stores many same-shape blocks in structure-of-arrays layout.
+
+## Packed storage
+
+For memory-bound work, `PackedVector{F}` stores code points at `bitwidth(F)` bits
+per element (a `Binary5p2se` vector at 5 bits/element instead of 8):
+
+```julia-repl
+julia> v = Binary5p2se.(rand(Xoshiro(3), 6) .* 4);
+
+julia> pv = PackedVector(v); sizeof(pv.data)
+8                     # 6 × 5 bits = 30 bits → one 64-bit word
+
+julia> pv[3] == v[3]
+true
+```
+
+It is a full `AbstractVector{F}` (indexing, `collect`, iteration), and `vmap` accepts
+it directly, unpacking cache-friendly tiles internally. The rule is *store packed,
+compute unpacked*: there is deliberately no in-place packed arithmetic.
+
+## Conformance and κ-approximate implementations
+
+`conformance()` returns the live declaration — formats, operations, mode vocabulary,
+the table specializations actually instantiated this session, and every registered
+approximation. `conformance_report()` prints it; `conformance_dict()` returns a
+plain nested `Dict` for JSON/TOML serialization.
+
+The default API is bit-exact, always. If you *want* a faster inexact kernel, register
+it — and the registry measures your honesty:
+
+```julia-repl
+julia> ftz = ftz_variant(:Exp, Binary8p4se, Binary8p4se, RNE_SatFinite);  # Annex example
+
+julia> impl = register_approx!(:my_fast_exp, :Exp, Binary8p4se, (Binary8p4se,),
+                               RNE_SatFinite, ftz);
+
+julia> kappa(:my_fast_exp)      # measured max code-point deviation, verified exhaustively
+4.0
+```
+
+Declaring `κ` smaller than the measured deviation throws; NaN-mismatching
+implementations must be acknowledged with an explicit `κ = NaN`. Retrieve with
+`approx(:my_fast_exp)`, list with `list_approx()`, and measure anything yourself with
+`measure_kappa` / `codedistance`.
+
+## Performance guidance
+
+- **Pass format types statically.** Through `const` bindings, type parameters, or
+  function arguments, every entry point fully specializes (scalar `Add` ≈ 18–26 ns,
+  `project` ≈ 13 ns, zero allocations). A format type read from a **non-`const`
+  global** forces Julia's dynamic dispatch on every call (~1 µs for keyword calls);
+  one function barrier `f(::Type{T}, …) where {T}` restores full speed.
+- **Bulk work belongs in array calls.** The table-gather kernels are ~50× the scalar
+  path; the first call per specialization pays a one-time build (≈ 0.4 ms unary,
+  tens of ms for 8×8 binary tables).
+- **Stochastic and ternary array calls** run the scalar pipeline per element; pass an
+  explicit `rng` for reproducibility.
+- **Memory:** `PackedVector` for storage; `BlockVector` for many blocks.
+- The reproducible benchmark suite lives at `benchmark/benchmarking.jl` and generates
+  a full markdown report for your machine.
+
+## Environment switches
+
+`ENV["P3109_FLOAT128"] = "disable"` (set before `using P3109`) disables the internal
+`Float128` fast paths in favor of pure MPFR — results are bit-identical (tested);
+only build/oracle speed changes.
