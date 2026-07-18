@@ -94,7 +94,7 @@ function bench_primitives(::Type{T}) where {T<:Binary}
     rows
 end
 
-# `getfield(P3109, op)` infers `::Any`; captured directly it would make every
+# `getfield(ByteFloats, op)` infers `::Any`; captured directly it would make every
 # benchmarked call a dynamic dispatch (exactly the harness failure the doctrine
 # exists to prevent — caught in review when the same op measured 10× slower here
 # than in the sensitivity table). Passing `f` through an argument specializes on
@@ -110,7 +110,7 @@ function bench_scalar_ops(::Type{T}, names, arity) where {T<:Binary}
     pool = codes_pool(T, 4096)
     rows = Row[]
     for op in names
-        b = _bench_op(getfield(P3109, op), T, pool, Val(arity))
+        b = _bench_op(getfield(ByteFloats, op), T, pool, Val(arity))
         push!(rows, Row(string(op), b))
     end
     sort!(rows; by=r -> r.med)
@@ -120,8 +120,8 @@ function bench_format_sensitivity(ops)
     rows = Row[]
     for F in (Binary8p4se, Binary8p3sf, Binary8p1uf, Binary5p2se, Binary3p1se), op in ops
         pool = codes_pool(F, 4096)
-        b = _bench_op(getfield(P3109, op), F, pool, Val(2))
-        push!(rows, Row("$(op)⟨$(P3109.formatname(F))⟩", b))
+        b = _bench_op(getfield(ByteFloats, op), F, pool, Val(2))
+        push!(rows, Row("$(op)⟨$(ByteFloats.formatname(F))⟩", b))
     end
     rows
 end
@@ -162,7 +162,7 @@ function bench_kernels(::Type{T}; n=65536) where {T<:Binary}
     b = @be (similar(A), Xoshiro(1)) (t -> vmap!(t[1], Val(:Add), T, σ, A, B, t[2]))(_) evals=1
     push!(rows, Row("vmap binary stochastic (scalar loop), n=$n", b; extra=perel(b, n)))
     pv = PackedVector(A)
-    b = @be P3109.vmap(:Exp, T, RNE_SatNone, pv) evals=1
+    b = @be ByteFloats.vmap(:Exp, T, RNE_SatNone, pv) evals=1
     push!(rows, Row("vmap unary through PackedVector, n=$n", b; extra=perel(b, n)))
     rows
 end
