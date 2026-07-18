@@ -16,7 +16,7 @@ registration. The test suite enumerates rather than samples: ≈ 8.8 million
 assertions.
 
 ```julia
-using P3109
+using ByteFloats
 
 Binary8p4se(1.6) + Binary8p4se(0.25)        # Binary8p4se(1.875 ≡ 0x47)
 Binary5p3sf(0x08) == Binary5p3sf(1.0)       # true — UInt8 constructs from a code point

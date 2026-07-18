@@ -1,5 +1,5 @@
 name = "ByteFloats"
-uuid = "9b3109aa-0000-4a5b-8c6d-3109e2026001"
+uuid = "d8c9c1d9-02f1-47db-b5f4-183fbc58627a"
 authors = ["Jeffrey Sarnoff <jeffrey.sarnoff@ieee.org>"]
 version = "0.1.0"
 
@@ -18,4 +18,4 @@ julia = "1.12"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "Random"]
+test = ["Test"]

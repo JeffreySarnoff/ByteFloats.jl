@@ -4,7 +4,7 @@
 # environment already instantiated:  julia --project=docs docs/make.jl
 
 using Documenter
-using P3109
+using ByteFloats
 
 makedocs(;
     sitename = "ByteFloats.jl",

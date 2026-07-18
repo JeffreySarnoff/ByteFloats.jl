@@ -11,7 +11,7 @@ The value 2.30078125 sits between the `Binary8p4se` grid points 2.25 and 2.5
 (ulp = 0.25 in [2, 4)):
 
 ```julia
-using P3109
+using ByteFloats
 
 for μ in (NearestTiesToEven(), NearestTiesToAway(), TowardPositive(),
           TowardNegative(), TowardZero(), ToOdd())
@@ -65,7 +65,7 @@ Binary8p4se(224.0 ≡ 0x7e)
 ### Quantizing a weight tensor and measuring the damage
 
 ```julia
-using P3109, Random, Statistics
+using ByteFloats, Random, Statistics
 
 rng = Xoshiro(42)
 w = randn(rng, 10_000) .* 0.25          # typical trained-weight scale
@@ -135,7 +135,7 @@ bare element format cannot. Here each row of `W` lives at a different scale, spa
 ~2¹⁶ across the matrix:
 
 ```julia
-using P3109, Random, Statistics
+using ByteFloats, Random, Statistics
 
 rng = Xoshiro(3)
 W = randn(rng, 64, 64) .* 2 .* (2.0 .^ (collect(0:63) ./ 4))   # per-row scales

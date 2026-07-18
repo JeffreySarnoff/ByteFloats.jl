@@ -19,10 +19,11 @@
 # (assertion counts in checkpoint.md); assembled file not re-executed at
 # consolidation time per instruction — run with `Pkg.test("P3109")`.
 
-using Test, Random
-using P3109
+using Test
+using Random
+using ByteFloats
 using Quadmath: Float128
-using P3109: project, project_interval, round_to_precision, encode, order_key,
+using ByteFloats: project, project_interval, round_to_precision, encode, order_key,
     KIND_FIN, nan_code, posinf_code, neginf_code, signmask,
     apply_op, ωeval, BigExactF, EncloseF, OP_REGISTRY, opinfo, _UNARY_OPS,
     get_table, blockdecode, _NAMED, Enclose128F, _USE_FLOAT128, _f128,

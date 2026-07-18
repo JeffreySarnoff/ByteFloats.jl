@@ -1,7 +1,7 @@
 # Independent reference implementation of ωRoundToPrecision/ωSaturate/ωEncode using
 # Rational{BigInt} arithmetic — shares no code with the engine under test.
-using P3109
-using P3109: nan_code, posinf_code, neginf_code, rawvalue, codepoint
+using ByteFloats
+using ByteFloats: nan_code, posinf_code, neginf_code, rawvalue, codepoint
 
 const RQ = Rational{BigInt}
 

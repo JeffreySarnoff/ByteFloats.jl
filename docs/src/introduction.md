@@ -41,7 +41,7 @@ the position that for value sets this small there is no excuse for approximation
 ## Thirty-second tour
 
 ```julia-repl
-julia> using P3109
+julia> using ByteFloats
 
 julia> x = Binary8p4se(1.6)          # construct = project under the default spec
 Binary8p4se(1.625 ≡ 0x45)

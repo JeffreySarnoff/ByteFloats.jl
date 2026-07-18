@@ -16,8 +16,8 @@
 using Chairmarks
 using Statistics: median
 using Random
-using P3109
-using P3109: project, order_key, get_table, empty_tables!, _f128, opinfo, OP_REGISTRY,
+using ByteFloats
+using ByteFloats: project, order_key, get_table, empty_tables!, _f128, opinfo, OP_REGISTRY,
              _UNARY_OPS, _BINARY_OPS, _TERNARY_OPS, rawvalue, decode
 
 # ---------------------------------------------------------------------------

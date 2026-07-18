@@ -14,8 +14,8 @@ from but are not covered by semantic-versioning guarantees.
 saturation ever sees it:
 
 ```julia
-using P3109
-using P3109: round_to_precision
+using ByteFloats
+using ByteFloats: round_to_precision
 
 r = round_to_precision(4, 8, NearestTiesToEven(), 2.30078125, 0, 0)   # P=4, bias=8
 (r.sign, r.S, r.Q, r.S * 2.0^r.Q)
@@ -32,7 +32,7 @@ plus an infinitesimal of this sign". This is how enclosure endpoints and asympto
 (`tanh → 1⁻`) are projected exactly:
 
 ```julia
-using P3109: project
+using ByteFloats: project
 project(Binary8p4se, ProjSpec(TowardNegative(), SatNone()), 1.0; sticky=-1)
 ```
 
@@ -43,7 +43,7 @@ Binary8p4se(0.9375 ≡ 0x3f)     # == NextLessThan(1.0): the engine crossed the 
 ### Tables are the scalar path, memoized
 
 ```julia
-using P3109: get_table
+using ByteFloats: get_table
 empty_tables!()
 tbl = get_table(:Exp, Binary8p4se, Binary8p4se, RNE_SatNone)
 (tbl[Int(0x45) + 1],
@@ -61,7 +61,7 @@ Ordering is integer arithmetic: a sign-magnitude fold, monotone with the total
 order, NaN at the top. This is what comparisons and the O(n) counting sort run on:
 
 ```julia
-using P3109: order_key
+using ByteFloats: order_key
 [(v, order_key(v)) for v in (Binary8p4se(-1.0), Binary8p4se(0.0),
                              Binary8p4se(1.0), Binary8p4se(NaN))]
 ```
@@ -80,7 +80,7 @@ brute-force nearest search under 256-bit arithmetic (distance agreement; the dra
 tie rule is the projection engine's job and is pinned elsewhere in the suite):
 
 ```julia
-using P3109
+using ByteFloats
 
 function ref_nearest_distance(::Type{T}, x) where {T}
     fins = [v for v in (rawvalue(T, UInt8(c)) for c in 0:255) if isfinite(decode(v))]
@@ -153,7 +153,7 @@ verify — against big-float truth, over random blocks with mixed scales and an 
 special-value mix:
 
 ```julia
-using P3109, Random
+using ByteFloats, Random
 
 rng = Xoshiro(5)
 mk() = Block(Binary8p1uf(2.0^rand(rng, -3:3)),

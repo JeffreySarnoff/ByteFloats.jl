@@ -9,7 +9,7 @@ exhaustively measured κ registry; ≈ 8.8 million test assertions; table-gather
 at fractions of a nanosecond per element.
 
 ```julia-repl
-julia> using P3109
+julia> using ByteFloats
 
 julia> Binary8p4se(1.6) + Binary8p4se(0.25)
 Binary8p4se(1.875 ≡ 0x47)
