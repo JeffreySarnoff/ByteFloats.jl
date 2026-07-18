@@ -64,6 +64,8 @@ function measure_kappa(fn::F, op::Symbol, fr::Type{<:Binary},
     end
     if exhaustive
         for lin in 0:total - 1
+            # mixed-radix decode of the linear index: argument i's code point is
+            # the next Ks[i]-bit digit of `lin` (radix 2^Ks[i] per position)
             codes = Vector{Int}(undef, N)
             r = lin
             for i in 1:N
@@ -144,7 +146,9 @@ approx(name::Symbol) = lock(() -> get(APPROX_REGISTRY, name) do
         throw(KeyError("no approximate implementation :$name registered"))
     end, APPROX_LOCK)
 kappa(name::Symbol) = kappa(approx(name))
+"""Sorted names of all registered κ-approximate implementations."""
 list_approx() = lock(() -> sort!(collect(keys(APPROX_REGISTRY))), APPROX_LOCK)
+"""Remove a registered κ-approximate implementation (no-op if absent)."""
 unregister_approx!(name::Symbol) = lock(() -> (delete!(APPROX_REGISTRY, name); nothing), APPROX_LOCK)
 
 # ---------------------------------------------------------------------------

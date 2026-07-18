@@ -18,14 +18,16 @@ struct PackedVector{F<:Binary} <: AbstractVector{F}
     n::Int
 end
 
+# Element i at K bits/element begins at bit p = (i-1)K: word w = p ÷ 64 (1-based)
+# at bit offset off = p mod 64. Elements with off + K > 64 splice across w, w+1.
+@inline _wordpos(K::Int, i::Int) = (((i - 1) * K) >> 6 + 1, ((i - 1) * K) & 63)
+
 function PackedVector(A::AbstractVector{F}) where {F<:Binary}
     K = bitwidth(F)
     n = length(A)
     words = zeros(UInt64, max(1, cld(n * K, 64)))
     @inbounds for (i, v) in enumerate(A)
-        p = (i - 1) * K
-        w = (p >> 6) + 1
-        off = p & 63
+        w, off = _wordpos(K, i)
         c = UInt64(codepoint(v))
         words[w] |= c << off
         if off + K > 64                                   # cross-word splice
@@ -40,9 +42,7 @@ Base.@propagate_inbounds function Base.getindex(pv::PackedVector{F}, i::Int) whe
     @boundscheck checkbounds(pv, i)
     K = bitwidth(F)
     mask = UInt64((1 << K) - 1)
-    p = (i - 1) * K
-    w = (p >> 6) + 1
-    off = p & 63
+    w, off = _wordpos(K, i)
     c = @inbounds pv.data[w] >> off
     if off + K > 64
         c |= @inbounds(pv.data[w + 1]) << (64 - off)
@@ -53,13 +53,11 @@ Base.@propagate_inbounds function Base.setindex!(pv::PackedVector{F}, v::F, i::I
     @boundscheck checkbounds(pv, i)
     K = bitwidth(F)
     mask = UInt64((1 << K) - 1)
-    p = (i - 1) * K
-    w = (p >> 6) + 1
-    off = p & 63
+    w, off = _wordpos(K, i)
     c = UInt64(codepoint(v))
     @inbounds pv.data[w] = (pv.data[w] & ~(mask << off)) | (c << off)
     if off + K > 64
-        hi = K - (64 - off)
+        hi = K - (64 - off)                               # bits spilling into word w+1
         @inbounds pv.data[w + 1] = (pv.data[w + 1] & ~((UInt64(1) << hi) - 1)) | (c >> (64 - off))
     end
     pv
@@ -75,7 +73,13 @@ function unpack_tile!(buf::AbstractVector{F}, pv::PackedVector{F}, first::Int, l
     buf
 end
 
-# elementwise kernels through packed storage: tile-unpack → byte Shape-A/B → emit bytes
+"""
+    vmap(op, fr, ρ, pv::PackedVector; rng=nothing) -> Vector{fr}
+
+Elementwise `op` over packed storage: unpack a `$( _PACK_TILE)`-element tile into a
+byte scratch, run the ordinary byte kernel (`vmap!`), emit, repeat. Never computes
+on packed words directly — the deliberate compute-unpacked/store-packed boundary.
+"""
 function vmap(op::Symbol, fr::Type{<:Binary}, ρ::ProjSpec, pv::PackedVector{F};
               rng::MaybeRNG=nothing) where {F<:Binary}
     out = Vector{fr}(undef, pv.n)

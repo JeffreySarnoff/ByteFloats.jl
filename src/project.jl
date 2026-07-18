@@ -9,6 +9,9 @@
 
 # ---- Rounded value in canonical integer form (design §5.2)
 const KIND_FIN = 0x00; const KIND_NAN = 0x01; const KIND_PINF = 0x02; const KIND_NINF = 0x03
+"""Result of ωRoundToPrecision in canonical integer form: a kind tag plus
+`sign · S · 2^Q` for finite results (design §5.2). The saturation stage consumes
+this without ever re-touching the carrier value."""
 struct Rounded
     kind::UInt8
     sign::Int8       # ±1 (finite, nonzero); +1 for zero
@@ -56,6 +59,11 @@ end
     isodd(k) ? k + 1 : k                                 # exact tie → even
 end
 
+# ROUND-AWAY PREDICATES, fixed-point family: these are the bit-path twins of the
+# generic `_roundaway` family below — one predicate per mode, identical semantics
+# on (fraction, sticky) evidence, differing only in carrier ((ν::UInt128, lost)
+# here vs exact float ν there). Any semantic edit must land in BOTH families;
+# the exhaustive bit ≡ generic equivalence gate in the suite enforces this.
 @inline _rab(::TowardZero, ν, lost, νs, Sfl, Q, B, P, sign, R) = false
 @inline _rab(::TowardPositive, ν, lost, νs, Sfl, Q, B, P, sign, R) =
     _bgt(ν, lost, νs, UInt128(0)) && sign > 0
@@ -102,6 +110,8 @@ function _rtp_f64(P::Int, B::Int, μ::RoundingMode3109, X::Float64, R::Int, stic
         end
     end
     νs = sticky == 0 ? 0 : sticky * Int(sign)
+    # step-down for "true value just below an exact dyadic": mirrors the identical
+    # block in _rtp_core (binade edge borrows from Q; otherwise decrement S)
     if νs < 0 && νfix == UInt128(0) && !lost                 # true just below the dyadic
         if Sfl == Int64(1) << (P - 1) && Q > Int64(2 - B - P)
             Q -= 1
@@ -203,6 +213,8 @@ end
     P > 1 ? iseven(Sfl) : (Sfl == 0 || iseven(Q + B))
 end
 
+# ROUND-AWAY PREDICATES, generic-carrier family (exact float ν): twins of the
+# fixed-point `_rab` family above — see the note there; edits must land in both.
 @inline _roundaway(::TowardZero, ν, νs, Sfl, Q, B, P, sign, R) = false
 @inline _roundaway(::TowardPositive, ν, νs, Sfl, Q, B, P, sign, R) = _νgt(ν, νs, 0) && sign > 0
 @inline _roundaway(::TowardNegative, ν, νs, Sfl, Q, B, P, sign, R) = _νgt(ν, νs, 0) && sign < 0

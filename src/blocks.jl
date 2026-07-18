@@ -9,9 +9,11 @@
 #   Float64 exact V   : one correctly rounded directed division IS the enclosure
 #                       (collapses to exact when V/S is representable, e.g. every
 #                       P=1 power-of-two scale — the draft's own NOTE — for free)
+#   Float128 exact V  : exact BigFloat conversion (≥128 bits), then one directed division
 #   BigExactF         : evaluated exactly (2200 bits); dividing at ≥ that precision
 #                       makes the conversion exact, so again one directed division
 #   EncloseF (d,u)    : interval-divided by the exact scale, sign-aware
+#   Enclose128F       : its MPFR fallback `f` is an EncloseF-shaped ladder — reuse it
 # Reductions use an exact wide-precision accumulator (precision chosen from the
 # operand structure ⇒ provably exact); the register-resident superaccumulator is
 # the tracked Phase-3 optimization (checkpoint.md).
@@ -103,7 +105,13 @@ function _encl_div_scale(res::Float128, S::Float64)
 end
 _encl_div_scale(res::Enclose128F, S::Float64) = _encl_div_scale(EncloseF(res.f), S)
 
-"""One element of ωBlockProject: the draft's S-special rows, then ωDivide + ωProject."""
+"""One element of ωBlockProject: the draft's S-special rows, then ωDivide + ωProject.
+
+Fast-path cascade after the special rows, ordered cheapest-first by result kind:
+exact Float64 quotient → CR Float128 quotient (exact or one-ulp bracket) →
+CR-divided Enclose128F bracket → fq-composition envelope (2^-89) — each resolved
+by the two-sided sticky gate; any miss falls through to the rigorous MPFR
+interval at the bottom."""
 function _bp_element(fr::Type{<:Binary}, ρ::ProjSpec, R::Int, res, Sdat::Float64)
     (isnan(Sdat) || _res_isnan(res)) && return rawvalue(fr, nan_code(fr))
     iszero(Sdat) && return project(fr, ρ, 0.0; R)

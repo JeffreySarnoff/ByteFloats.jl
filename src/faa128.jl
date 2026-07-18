@@ -209,6 +209,7 @@ function faa(x::Float128, y::Float128, z::Float128)
 
     # ---- sort by magnitude: (m1,s1,u1) >= (m2,s2,u2) >= (m3,s3,u3) -------
     # (for finite values the |bits| order IS the magnitude order; zeros sink)
+    # three-comparator sorting network: 2v1, 3v1, 3v2
     m1, sg1, u1 = ax, sx, ux
     m2, sg2, u2 = ay, sy, uy
     m3, sg3, u3 = az, sz, uz
@@ -231,6 +232,8 @@ function faa(x::Float128, y::Float128, z::Float128)
 
     sig2, e2 = decompose(m2)
     Bh, Bl = shl256(zero(UInt128), sig2, 142)
+    # shift cap: any s ≥ 256 is a full jam (shr256jam's last branch), so 300
+    # stands in for arbitrarily large exponent gaps (which can reach ~32,000)
     Bh, Bl = shr256jam(Bh, Bl, min(e1 - e2, 300))
     if sg2 == sres
         Mh, Ml = add256(Mh, Ml, Bh, Bl)
@@ -251,6 +254,7 @@ function faa(x::Float128, y::Float128, z::Float128)
         sig3, e3 = decompose(m3)
         Ch, Cl = shl256(zero(UInt128), sig3, 142)
         Ch, Cl = shr256jam(Ch, Cl, min(E - e3, 300))    # align against CURRENT anchor
+                                                        # (same ≥256 ⇒ full-jam cap)
         if sg3 == sres
             Mh, Ml = add256(Mh, Ml, Ch, Cl)
         elseif (Mh > Ch) || (Mh == Ch && Ml >= Cl)
@@ -279,7 +283,7 @@ function faa(x::Float128, y::Float128, z::Float128)
             (sres ? SIGN_MASK : zero(UInt128)) | EXP_MASK)
     end
     if be <= 0                                          # subnormal range: pre-shift
-        Mh, Ml = shr256jam(Mh, Ml, min(1 - be, 300))
+        Mh, Ml = shr256jam(Mh, Ml, min(1 - be, 300))    # ≥256 ⇒ full-jam cap again
         be = 0
     end
 

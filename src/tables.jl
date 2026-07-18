@@ -33,6 +33,9 @@ table_bytes() = lock(() -> sum(length, values(TABLE_CACHE); init=0), TABLE_LOCK)
 """Drop every cached table (they rebuild lazily on next use)."""
 empty_tables!() = lock(() -> (empty!(TABLE_CACHE); nothing), TABLE_LOCK)
 
+# One table entry = one trip through the scalar path. Convert is the sole op with
+# no ω-semantics (registry group :conv): it is a bare projection of the decoded
+# operand, so it bypasses apply_op. R = 0 is safe: stochastic ρ never reaches here.
 @inline function _scalar_code(op::Val{name}, fr::Type{<:Binary}, ρ::ProjSpec, xs::Float64...) where {name}
     name === :Convert ? codepoint(project(fr, ρ, xs[1])) :
                         codepoint(apply_op(op, fr, ρ, 0, xs...))
@@ -61,6 +64,17 @@ function _build_binary(op::Symbol, fr::Type{<:Binary}, f1::Type{<:Binary}, f2::T
     end
     tbl
 end
+
+"""
+    get_table(op, fr, f1, [f2,] ρ) -> Memory{UInt8}
+
+Fetch (building and caching on first use) the complete result table for the pure-ρ
+specialization `op⟨fr; f1[, f2]⟩ under ρ`: entry `c + 1` (unary) or
+`(c1 << K2) + c2 + 1` (binary) holds the result code point for those operand
+code points. Throws for stochastic ρ. `@noinline` by design: kernels call this
+once per array operation and index the returned table in their hot loop.
+"""
+function get_table end
 
 # Double-checked pattern: probe under lock, build OUTSIDE the lock (builds may run
 # MPFR escalations), insert under lock; a racing duplicate build is benign and rare.

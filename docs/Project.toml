@@ -1,4 +1,5 @@
 [deps]
+ByteFloats = "d8c9c1d9-02f1-47db-b5f4-183fbc58627a"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 
 [compat]

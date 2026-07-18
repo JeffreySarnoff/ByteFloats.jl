@@ -88,6 +88,8 @@ end
 @inline function vmap(op::Symbol, fr::Type{<:Binary}, ρ::ProjSpec, As::AbstractArray...;
                       rng::MaybeRNG=nothing)
     dest = similar(first(As), fr)
+    # Stochastic ρ appends rng as a trailing *positional* argument, selecting the
+    # rng-threading vmap! methods above; pure ρ takes the plain Shape-A/B methods.
     isstochastic(ρ) ? vmap!(dest, Val(op), fr, ρ, As..., rng) : vmap!(dest, Val(op), fr, ρ, As...)
 end
 
@@ -109,5 +111,8 @@ for op in OP_REGISTRY
                     rng::MaybeRNG=nothing) = vmap($(QuoteNode(name)), fr, ρ, A, B, C; rng)
     end
 end
+# Convert has no ω-semantics (registry group :conv) so the loop above skips it;
+# its array form still rides the Shape-A gather — the :Convert table is built by
+# _scalar_code's bare-projection branch. Pure ρ only (stochastic Convert is per-R).
 Convert(fr::Type{<:Binary}, ρ::ProjSpec, A::AbstractArray{<:Binary}) =
     vmap(:Convert, fr, ρ, A)

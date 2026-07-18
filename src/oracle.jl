@@ -8,11 +8,14 @@
 #   Float128     exact result by width analysis (Class R: sums of decoded datums whose
 #                required significand width fits 113 bits — see the _DE_* thresholds)
 #   BigExactF    f() → BigFloat, exact at 2200 bits (the wide-spread tail)
-#   Enclose128F  correctly-rounded Float128 bracket (Class R: IEEE-CR /, sqrt, fma)
-#                with the MPFR closure as grid-straddle fallback
+#   Enclose128F  correctly-rounded Float128 bracket (Class R: IEEE-CR sqrt/rsqrt;
+#                Divide/Recip now resolve via EncloseF's yd — see below) with the
+#                MPFR closure as grid-straddle fallback
 #   EncloseF     f(prec) → MPFR directed (lo, hi); optional fq Float128 pre-filter
 #                (Class E: |truth − fq()| ≤ |fq()|·2^-90, ≥2^18 slack over published
-#                libquadmath bounds, discharged by the differential-build tests)
+#                libquadmath bounds, discharged by the differential-build tests);
+#                optional yd eager Float64 estimate (faithful libm or IEEE-CR
+#                quotient: |truth − yd| ≤ |yd|·2^-45) tried before fq
 #
 # Special-value rows are written out explicitly even where the substrate coincides:
 # the rows are the spec, not an optimization. Interpretations beyond the readable
@@ -62,7 +65,9 @@ _mpfr2(f::F, x::Float64, y::Float64) where {F} = prec -> setprecision(BigFloat, 
     (setrounding(() -> f(BigFloat(x), BigFloat(y)), BigFloat, RoundDown),
      setrounding(() -> f(BigFloat(x), BigFloat(y)), BigFloat, RoundUp))
 end
-# enclosure builders: MPFR ladder + optional Float128 pre-filter estimator
+# enclosure builders: MPFR ladder (f) + optional Float128 pre-filter (fq) +
+# optional eager Float64 estimate (yd); see EncloseF's docstring for the
+# three-stage resolution each of these feeds
 _encl1(f::F, x::Float64; fq=nothing, yd=NaN) where {F} = EncloseF(_mpfr1(f, x), fq, yd)
 _encl2(f::F, x::Float64, y::Float64; fq=nothing, yd=NaN) where {F} = EncloseF(_mpfr2(f, x, y), fq, yd)
 
@@ -242,8 +247,11 @@ end
 
 # ============================================================================
 # Group "quotient": Divide, Recip, Sqrt, RSqrt   (Annex A.3 zero/∞ semantics)
-# Class R fallbacks (plan Site C): Float128 /, sqrt, fma are IEEE correctly rounded,
-# so an inexact nearest-CR result q brackets the truth in (prevfloat(q), nextfloat(q)).
+# All four rest on IEEE correct rounding (Class R, plan Site C), split two ways:
+#   Divide/Recip — the *Float64* quotient is CR (≤ half an ulp), so it serves as
+#     EncloseF's eager yd estimate directly; no Float128 arithmetic on this path.
+#   Sqrt/RSqrt   — Float128 sqrt/inv are CR, so an inexact nearest-CR result q
+#     brackets the truth in (prevfloat(q), nextfloat(q)) → Enclose128F.
 # ============================================================================
 function ωeval(::Val{:Divide}, x::Float64, y::Float64)
     (isnan(x) | isnan(y)) && return NaN

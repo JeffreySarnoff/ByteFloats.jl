@@ -54,11 +54,11 @@ julia --project=benchmark benchmark/benchmarking.jl benchmark_report.md
 ## Repository layout
 
 ```
-src/         eleven source layers (formats → … → approx); see the Technical Guide
+src/         eleven source layers (formats → … → approx) plus the vendored
+             Float128 fma/faa soft-float modules; see the Technical Guide
 test/        the consolidated exhaustive suite (runtests.jl)
 docs/        Documenter site (make.jl, builddocs.jl, src/*.md)
 benchmark/   Chairmarks suite + report generator (own environment)
-checkpoint.md  project working memory: decisions, measurements, resolutions
 ```
 
 ## Notes
@@ -66,6 +66,4 @@ checkpoint.md  project working memory: decisions, measurements, resolutions
 - Requires Julia 1.12. `Quadmath` is a hard dependency used only inside the
   oracle/fallback paths; `ENV["ByteFloats_Float128"] = "disable"` (before loading)
   selects the pure-MPFR configuration with bit-identical results.
-- **License: not yet chosen.** This tree deliberately ships without a LICENSE
-  file — selecting one is a working-group decision that must precede any public
-  release or registration.
+- **License: MIT** (see `LICENSE`).

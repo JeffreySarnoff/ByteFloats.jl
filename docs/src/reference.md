@@ -9,7 +9,7 @@ coverage is tracked work.
 ## Public API
 
 ```@autodocs
-Modules = [P3109]
+Modules = [ByteFloats]
 Private = false
 ```
 
@@ -19,6 +19,6 @@ Unexported machinery documented in-source and referenced by the
 [Technical Guide](@ref) and [Technical Examples](@ref).
 
 ```@autodocs
-Modules = [P3109]
+Modules = [ByteFloats]
 Public = false
 ```

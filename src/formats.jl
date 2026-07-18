@@ -11,7 +11,7 @@ The code point occupies the low `K` bits of the payload byte; the high `8-K` bit
 are maintained zero as a representation invariant. Construct raw code points with
 `T(c::UInt8)` (validated code-point construction), `rawvalue(T, c)` (unchecked
 kernel route), or `Binary{...}(Val(:code), x::UInt8)`; construct from numeric
-values with `T(x::Real)` (default projection spec) or `P3109.Convert`. UInt8 is
+values with `T(x::Real)` (default projection spec) or `Convert`. UInt8 is
 the one argument type meaning *code point*; all other Reals mean *value*.
 """
 struct Binary{K,P,SGN,EXT} <: AbstractFloat
@@ -60,12 +60,18 @@ and `Convert` is numeric for all integers: `Binary8p4se(0x02)` is code point 2
 @inline Base.codepoint(v::Binary) = v.x   # extends Base.codepoint (Char); avoids export clash
 
 # ---- Group M (meta) operations: pure functions of the type parameters (design §2.3)
+"Format bitwidth K (3–8)."
 bitwidth(::Type{Binary{K,P,S,E}}) where {K,P,S,E} = K
 Base.precision(::Type{Binary{K,P,S,E}}) where {K,P,S,E} = P
+"Whether the format is Signed (has a sign bit and negative datums)."
 issigned(::Type{Binary{K,P,S,E}}) where {K,P,S,E} = S
+"Whether the format's domain is Extended (datum set includes infinities)."
 isextended(::Type{Binary{K,P,S,E}}) where {K,P,S,E} = E
+"Exponent bias: 2^(K−P−1) signed, 2^(K−P) unsigned."
 expbias(::Type{Binary{K,P,S,E}}) where {K,P,S,E} = S ? (1 << (K - P - 1)) : (1 << (K - P))
+"Width of the exponent field in bits: (K − signbit) − (P − 1)."
 expbitwidth(::Type{Binary{K,P,S,E}}) where {K,P,S,E} = (S ? K - 1 : K) - (P - 1)
+"Trailing-significand width P − 1 (the stored fraction bits)."
 trailingsigbits(::Type{Binary{K,P,S,E}}) where {K,P,S,E} = P - 1
 
 const BitwidthOf = bitwidth

@@ -9,8 +9,8 @@ Bit-exact defined results on every default path; the projection engine
 (`RoundToPrecision → Saturate → Encode`) is the single write path into a code
 point; approximate fast paths exist only behind the explicit κ registry
 (`register_approx!` / `approx`), never substituted silently. See
-`conformance()` for the live declaration and `P3109.draft_revision()` for the
-implemented draft.
+`conformance()` for the live declaration and `ByteFloats.draft_revision()` for
+the implemented draft.
 
 # Performance note
 Pass format types through `const` bindings, type parameters, or function

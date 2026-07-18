@@ -8,11 +8,17 @@
 
 abstract type RoundingMode3109 end
 
+"Round to nearest; ties to the even code point (IEEE default; draft §4.7.1)."
 struct NearestTiesToEven <: RoundingMode3109 end
+"Round to nearest; ties away from zero (draft §4.7.1)."
 struct NearestTiesToAway <: RoundingMode3109 end
+"Directed rounding toward +∞ (draft §4.7.2)."
 struct TowardPositive    <: RoundingMode3109 end
+"Directed rounding toward −∞ (draft §4.7.2)."
 struct TowardNegative    <: RoundingMode3109 end
+"Directed rounding toward zero — truncation (draft §4.7.2)."
 struct TowardZero        <: RoundingMode3109 end
+"Round inexact results to the nearest *odd* code point (draft §4.7.3; sticky-friendly)."
 struct ToOdd             <: RoundingMode3109 end
 
 # Stochastic variants (draft §4.7.4): R random bits with 0 ≤ R < 2^N are supplied
@@ -76,10 +82,13 @@ nrandbits(::ProjSpec{R,S}) where {R,S} = nrandbits(R)
 # ---- defaults (design §10.2)
 """(NearestTiesToEven, SatNone) — the package-wide default ρ."""
 const RNE_SatNone   = ProjSpec{NearestTiesToEven,SatNone}()
+"""(NearestTiesToEven, SatFinite) — nearest-even with everything clamped to the finite range."""
 const RNE_SatFinite = ProjSpec{NearestTiesToEven,SatFinite}()
 default_projspec(::Type{<:Binary}) = RNE_SatNone
 
 # ---- Base.RoundingMode compatibility shim (API boundaries only)
+"""Translate a `Base.RoundingMode` to its `RoundingMode3109` counterpart (identity on
+the latter). Used only at API boundaries; internals always carry RoundingMode3109."""
 projmode(::RoundingMode{:Nearest})         = NearestTiesToEven()
 projmode(::RoundingMode{:NearestTiesAway}) = NearestTiesToAway()
 projmode(::RoundingMode{:Up})              = TowardPositive()

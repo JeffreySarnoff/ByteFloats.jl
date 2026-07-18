@@ -92,7 +92,7 @@ no negative zero, and `Float64` serves as the exact interchange carrier for all 
 ## Installation
 
 ```julia
-pkg> add P3109        # once registered; from source: pkg> dev path/to/P3109
+pkg> dev path/to/ByteFloats.jl    # from source (the package is not yet registered)
 ```
 
 Requires Julia 1.12. `Quadmath` (libquadmath's `Float128`) is a hard dependency used
@@ -104,6 +104,6 @@ with **identical results** (this equivalence is itself part of the test suite).
 
 `conformance()` returns the live, serializable conformance declaration (formats,
 operations, modes, instantiated table specializations, and κ registrations);
-`P3109.draft_revision()` names the implemented draft revision. Interpretations made
-where the draft text under-determined behavior are marked `[interp]` in the source and
-catalogued in the project checkpoint.
+`ByteFloats.draft_revision()` names the implemented draft revision. Interpretations
+made where the draft text under-determined behavior are marked `[interp]` in the
+source comments.

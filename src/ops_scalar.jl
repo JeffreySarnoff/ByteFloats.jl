@@ -7,10 +7,13 @@
 # the same rows (blocks.jl, tables.jl, approx.jl).
 #
 # Evaluation contract (architecture §5.1): oracle.jl supplies
-#     ωeval(::Val{op}, xs::Float64...) ::Union{Float64, BigExactF, EncloseF}
+#     ωeval(::Val{op}, xs::Float64...)
+#         ::Union{Float64, Float128, BigExactF, EncloseF, Enclose128F}
 # and this file supplies `apply_op`, which finishes each result kind through the
-# projection engine. `Float64` results are *exact* by construction; `BigExactF.f()`
-# returns an exact BigFloat; `EncloseF.f(prec)` returns a directed (lo, hi) enclosure.
+# projection engine. `Float64`/`Float128` results are *exact* by construction;
+# `BigExactF.f()` returns an exact BigFloat; `EncloseF` resolves through up to
+# three stages (eager Float64 estimate → Float128 pre-filter → MPFR ladder);
+# `Enclose128F` carries a correctly-rounded Float128 bracket with an MPFR fallback.
 
 using Random: AbstractRNG, default_rng
 
@@ -25,17 +28,26 @@ struct BigExactF{F}
     f::F
 end
 """
-Deferred enclosure: `f(prec)` returns `(lo, hi)::NTuple{2,BigFloat}` bracketing the
-true value (MPFR directed rounding — the rigorous ladder). `fq`, when present, is a
-zero-argument Float128 estimator used as a pre-filter (plan Site D, Class E): the
-true value is taken to lie within `|y|·2^-90` of `y = fq()` — a bound ≥ 2^18 slacker
-than any published libquadmath transcendental error, discharged empirically by the
-differential-build tests. Filter disagreement always falls through to `f`.
+Deferred enclosure, resolved by `_finish` through up to three stages, cheapest first:
+
+1. `yd` — an *eager* Float64 estimate (NaN ⇒ absent) whose libm evaluation is
+   faithful (≤ 1 ulp); the true value is taken to lie within `|yd|·2^-45`
+   (`_F64_RELEXP`), ≥ 2^7 slacker than any faithful-libm error.
+2. `fq` — a zero-argument Float128 estimator (plan Site D, Class E; `nothing` ⇒
+   absent): true value within `|y|·2^-90` of `y = fq()` (`_F128_RELEXP`), a bound
+   ≥ 2^18 slacker than any published libquadmath transcendental error, discharged
+   empirically by the differential-build tests.
+3. `f(prec)` — the rigorous MPFR ladder: directed `(lo, hi)::NTuple{2,BigFloat}`
+   strictly bracketing the true value.
+
+Each estimate stage returns only when the two-sided sticky projection of its
+envelope agrees on a single code point; any disagreement (or an absent/degenerate
+estimate) falls through to the next stage. Stage 3 always decides.
 """
 struct EncloseF{F,G}
     f::F
     fq::G
-    yd::Float64   # eager Float64 estimate (NaN ⇒ none); envelope |yd|·2^-45 per _F64_RELEXP
+    yd::Float64
 end
 EncloseF(f) = EncloseF(f, nothing, NaN)
 EncloseF(f, fq) = EncloseF(f, fq, NaN)
@@ -97,6 +109,8 @@ function _finish(::Type{fr}, ρ::ProjSpec, R::Int, z::Enclose128F) where {fr<:Bi
     project_interval(fr, ρ, z.f; R)
 end
 
+"""apply_op(Val(op), fr, ρ, R, xs...) — evaluate `op`'s ω-semantics on decoded
+Float64 operands and project the result into `fr` under ρ (with random bits R)."""
 @inline function apply_op(op::Val, ::Type{fr}, ρ::ProjSpec, R::Int, xs::Float64...) where {fr<:Binary}
     res = ωeval(op, xs...)
     # bitops plan Phase 0(a): explicit fast split — Class-1/selection results are

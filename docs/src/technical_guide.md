@@ -99,7 +99,7 @@ result kinds; `apply_op` fast-splits the common one and finishes the rest:
 | `Float128` | exact by **width analysis** | direct `project` (Float128 carrier) |
 | `BigExactF` | exact at 2200-bit precision (wide-spread tail) | `project` on `BigFloat` |
 | `Enclose128F` | correctly-rounded Float128 **bracket** | sticky agreement, MPFR fallback |
-| `EncloseF` | MPFR directed enclosure `f(prec)`, optional Float128 pre-filter `fq` | interval protocol |
+| `EncloseF` | MPFR directed enclosure `f(prec)`, optional Float128 pre-filter `fq`, optional eager Float64 estimate `yd` | three-stage: `yd` → `fq` → interval protocol |
 
 Two **rigor classes** govern every non-`Float64` path, and their arguments are never
 mixed:
@@ -108,18 +108,30 @@ mixed:
 in `Float128` whenever operand bits + exponent spread fit 113 bits — checked in
 advance by integer exponent arithmetic (`Add` at ΔE ≤ 100, `FMA` ≤ 92, `FAA` span
 ≤ 98); beyond, the 2200-bit path takes over. (b) IEEE mandates correct rounding for
-`Float128` `/`, `sqrt`, `fma`: an inexact nearest-CR quotient `q` brackets the truth
-in the *open* interval `(prevfloat(q), nextfloat(q))` — no accuracy assumption at
-all. Exactness itself is detected by an `fma` residual test.
+division and `sqrt` at *every* binary width. `Divide`/`Recip` therefore use the
+**Float64** quotient directly: it is within half an ulp of truth, so it serves as
+`EncloseF`'s eager `yd` estimate with no Float128 arithmetic on the path at all.
+`Sqrt`/`RSqrt` use the **Float128** CR result: an inexact nearest-CR value `q`
+brackets the truth in the *open* interval `(prevfloat(q), nextfloat(q))` — no
+accuracy assumption in either case. Exactness itself is detected by an `fma`
+residual test.
 
-**Class E (envelope-conditional).** libquadmath's transcendentals are faithful but
-not correctly rounded, so a `Float128` estimate `y` stands in for an enclosure only
-as `(y − E, y + E)` with `E = |y|·2⁻⁹⁰` — at least 2¹⁸ slacker than any published
-libquadmath error bound. If the sticky-projected endpoints agree, that code point is
-the answer; if not, the MPFR ladder decides — so an envelope failure can only cost
+**Class E (envelope-conditional).** Faithful-but-not-CR evaluations stand in for an
+enclosure only inside a generous envelope, resolved by the two-sided sticky gate.
+Two stages, cheapest first. *Float64 stage:* for operations whose Float64 libm is
+faithful (≤ 1 ulp ≈ 2⁻⁵² relative — the exp/log families, the hyperbolics, forward
+trig inside the |x| ≤ 10¹⁵ reduction window, `atan`, `asinh`, the softplus
+composition), the eager estimate `yd` carries envelope `E = |yd|·2⁻⁴⁵`, ≥ 2⁷
+slacker than any faithful-libm error (measured margin on this machine: ≥ 2⁶·⁶).
+*Float128 stage:* libquadmath's estimate `y = fq()` carries `E = |y|·2⁻⁹⁰`, at
+least 2¹⁸ slacker than any published libquadmath bound. In both stages, if the
+sticky-projected endpoints agree, that code point is the answer; if not, the next
+stage (ultimately the MPFR ladder) decides — so an envelope failure can only cost
 speed, never correctness, unless both endpoints agree *and* the envelope is wrong,
 which the differential-build tests rule out empirically by building every standard
-table twice (Float128-first and pure-MPFR) and byte-diffing.
+table twice (Float128-first and pure-MPFR) and byte-diffing, and which the
+exhaustive oracle cross-check re-verifies per operation against the 3072-bit
+protocol.
 
 **The interval protocol** (`project_interval`) is the termination backbone: evaluate
 the MPFR enclosure at precision `p`; if `lo == hi` the value is exactly
@@ -152,8 +164,9 @@ products) is exactly representable in `Float128`; if so, a plain `Float128`
 accumulation *is* the exact answer; if not, an exact big-float accumulation takes
 over. Either way there is exactly one projection, at the end. `ωBlockProject`
 follows the draft's special rows for the scale (NaN, 0, ±Inf) and divides each
-element result by the scale through the same CR-bracket / enclosure machinery as
-scalar `Divide`.
+element result by the scale through its own cheapest-first CR-bracket / enclosure
+cascade (exact Float64 quotient → CR Float128 → bracket/pre-filter → MPFR
+interval), mirroring the scalar quotient group's rigor arguments.
 
 ## The κ registry and conformance
 
@@ -188,8 +201,10 @@ keyword call costs ~1 µs; a dynamic positional call far less; six unresolved in
 sites cost six times one). The rules the shipped `benchmark/benchmarking.jl`
 enforces structurally: format types enter as type parameters; operands come from
 untimed setup; functions retrieved reflectively pass through argument barriers to
-specialize; and a preflight aborts the run if warm scalar paths allocate. Vary one
-binding per variant; verify specialization before believing a number.
+specialize; and a preflight aborts the run if warm scalar paths allocate. The
+table-build section reports both the cold build (cache evicted per sample) and the
+steady-state warm cache hit, since callers amortize the former through the latter.
+Vary one binding per variant; verify specialization before believing a number.
 
 ## Deliberate limitations
 

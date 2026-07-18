@@ -44,8 +44,8 @@
 #
 # On Windows, loading the module installs `Base.fma` for Float128
 # automatically. `fma128(x, y, z)` is always available on every OS and always
-# uses this implementation; `Float128FMA.install!()` forces `Base.fma` to use
-# it even where a native binding exists.
+# uses this implementation; on other platforms `Base.fma` keeps its native
+# libquadmath binding.
 
 module Float128FMA
 
@@ -238,6 +238,8 @@ function fma128(x::Float128, y::Float128, z::Float128)
         sigz, ez = decompose(az)
         zh, zl = shl256(zero(UInt128), sigz, 142)       # leading bit at 254
         d = Ep - ez
+        # shift cap: any s ≥ 256 is a full jam (shr256jam's last branch), so 300
+        # stands in for arbitrarily large exponent gaps (which can reach ~32,000)
         if d >= 0
             zh, zl = shr256jam(zh, zl, min(d, 300))     # align z down to product
             E = Ep
@@ -278,7 +280,7 @@ function fma128(x::Float128, y::Float128, z::Float128)
             (sres ? SIGN_MASK : zero(UInt128)) | EXP_MASK)
     end
     if be <= 0                                          # subnormal range: pre-shift
-        Mh, Ml = shr256jam(Mh, Ml, min(1 - be, 300))
+        Mh, Ml = shr256jam(Mh, Ml, min(1 - be, 300))    # ≥256 ⇒ full-jam cap again
         be = 0
     end
 

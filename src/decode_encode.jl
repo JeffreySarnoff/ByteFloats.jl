@@ -1,15 +1,7 @@
 # ===== decode_encode.jl — ωDecode / ωEncode / ordering keys / Next ops (design §3)
 
-"""
-    decode(v::Binary) -> Float64
-
-ωDecode (draft §4.7.2). Float64 is the universal exact carrier for K ≤ 8 datums
-(≤ 8-bit significands, |exponent| ≲ 2^7); exactness is asserted by exhaustive test.
-
-Implemented as a constant-tuple lookup (bitops plan K2): the per-format table is
-generated once from the computational decode below, so the two are correct by
-construction and asserted equivalent exhaustively; constant inputs still fold.
-"""
+# Computational ωDecode: the ground truth from which the lookup table below is
+# generated. Kept private; `decode` (the exported entry) reads the table.
 @inline function _decode_compute(v::Binary{K,P,SGN,EXT})::Float64 where {K,P,SGN,EXT}
     c = codepoint(v)
     if SGN
@@ -45,6 +37,16 @@ end
     :($t)
 end
 
+"""
+    decode(v::Binary) -> Float64
+
+ωDecode (draft §4.7.2). Float64 is the universal exact carrier for K ≤ 8 datums
+(≤ 8-bit significands, |exponent| ≲ 2^7); exactness is asserted by exhaustive test.
+
+Implemented as a constant-tuple lookup (bitops plan K2): the per-format table is
+generated once from `_decode_compute` above, so the two are correct by
+construction and asserted equivalent exhaustively; constant inputs still fold.
+"""
 @inline decode(v::Binary{K,P,SGN,EXT}) where {K,P,SGN,EXT} =
     @inbounds _decode_table(Binary{K,P,SGN,EXT})[Int(codepoint(v)) + 1]
 
@@ -152,7 +154,10 @@ function Base.sort!(v::AbstractVector{T}, lo::Int, hi::Int, ::CodeCountingSort,
 end
 
 # ---- Class (draft §4.13.1)
+"Eight-way datum classification returned by `Class` (draft §4.13.1)."
 @enum FPClass::UInt8 ClassNaN ClassNegInf ClassNegNormal ClassNegSubnormal ClassZero ClassPosSubnormal ClassPosNormal ClassPosInf
+"""Class(v) -> FPClass (draft §4.13.1): classify `v` as NaN, ±Inf, ±normal,
+±subnormal, or zero."""
 function Class(v::Binary)
     isnan(v) && return ClassNaN
     d = decode(v)
@@ -168,6 +173,9 @@ function Class(v::Binary)
 end
 
 # ---- NextGreaterThan / NextLessThan (draft §4.16): ±1 steps on magnitude code points
+"""NextGreaterThan(v) (draft §4.16): the least datum greater than `v` in the total
+order — one step up the code lattice, with NaN → NaN and MaxFinite/+Inf → NaN at
+the top. `Base.nextfloat` on `Binary` is this operation."""
 function NextGreaterThan(v::T) where {K,P,SGN,EXT,T<:Binary{K,P,SGN,EXT}}
     isnan(v) && return v
     c = codepoint(v)
@@ -185,6 +193,9 @@ function NextGreaterThan(v::T) where {K,P,SGN,EXT,T<:Binary{K,P,SGN,EXT}}
     end
     rawvalue(T, c + 0x01)
 end
+"""NextLessThan(v) (draft §4.16): the greatest datum less than `v` in the total
+order — one step down the code lattice, with NaN → NaN and MinFinite/−Inf → NaN at
+the bottom. `Base.prevfloat` on `Binary` is this operation."""
 function NextLessThan(v::T) where {K,P,SGN,EXT,T<:Binary{K,P,SGN,EXT}}
     isnan(v) && return v
     c = codepoint(v)

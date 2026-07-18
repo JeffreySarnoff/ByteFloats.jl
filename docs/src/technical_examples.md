@@ -3,7 +3,7 @@
 Internals-level recipes: introspecting the pipeline, verifying custom code against
 the oracle, measuring κ, and benchmarking without fooling yourself. Outputs are
 captured from real sessions. Several examples use unexported internals
-(`P3109.round_to_precision`, `P3109.project`, …); those are stable enough to learn
+(`ByteFloats.round_to_precision`, `ByteFloats.project`, …); those are stable enough to learn
 from but are not covered by semantic-versioning guarantees.
 
 ## Basic
@@ -168,7 +168,7 @@ function verify_dots(trials)
         truth = setprecision(() -> sum(BigFloat(lx[i]) * BigFloat(ly[i]) for i in 1:32),
                              BigFloat, 512)
         got = BlockDotProduct(Binary8p4se, RNE_SatNone, bx, by)
-        ref = setprecision(() -> P3109.project(Binary8p4se, RNE_SatNone, truth), BigFloat, 512)
+        ref = setprecision(() -> ByteFloats.project(Binary8p4se, RNE_SatNone, truth), BigFloat, 512)
         codepoint(got) == codepoint(ref) || return false
     end
     true
@@ -193,7 +193,7 @@ draws:
 ```julia
 σ4 = ProjSpec(StochasticA{4}(), SatNone())
 x = 2.0 + 3/64
-count(decode(P3109.project(Binary8p4se, σ4, x; R)) == 2.25 for R in 0:15)
+count(decode(ByteFloats.project(Binary8p4se, σ4, x; R)) == 2.25 for R in 0:15)
 ```
 
 ```
@@ -208,10 +208,10 @@ question into an exhaustive one — the pattern the shipped test suite uses.
 The package's benchmark doctrine, in one snippet (needs the `benchmark/` environment
 for Chairmarks). Format types enter as **type parameters**; operands come from
 Chairmarks' *untimed* `setup`; and if you retrieve functions reflectively
-(`getfield(P3109, op)`), pass them through an argument barrier so they specialize:
+(`getfield(ByteFloats, op)`), pass them through an argument barrier so they specialize:
 
 ```julia
-using Chairmarks, P3109, Random
+using Chairmarks, ByteFloats, Random
 using Statistics: median
 
 function bench_add(::Type{T}) where {T<:Binary}          # T: type parameter, not a global
