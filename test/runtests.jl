@@ -954,10 +954,17 @@ println("approx.jl verified")
         @test lo < t < hi                                     # ladder strictly brackets
     end
     s = ωeval(Val(:Sqrt), 2.0)
-    @test s isa Enclose128F && BigFloat(s.lo) < sqrt(BigFloat(2)) < BigFloat(s.hi)
+    @test s isa EncloseF && s.yd == sqrt(2.0)                 # IEEE-CR hardware sqrt
+    ts = setprecision(() -> sqrt(BigFloat(2)), BigFloat, 500)
+    @test abs(ts - BigFloat(s.yd)) <= 0.5 * eps(s.yd)         # CR ⇒ ≤ half an ulp
+    slo, shi = s.f(256)
+    @test slo < ts < shi                                      # ladder strictly brackets
     rs = ωeval(Val(:RSqrt), 2.0)
     trs = setprecision(() -> 1 / sqrt(BigFloat(2)), BigFloat, 500)
-    @test rs isa Enclose128F && BigFloat(rs.lo) < trs < BigFloat(rs.hi)
+    @test rs isa EncloseF && rs.yd == 1.0 / sqrt(2.0)         # composed hardware-CR estimate
+    @test abs(trs - BigFloat(rs.yd)) <= 1.5 * eps(rs.yd)      # ≤ ~1.5 ulp by composition
+    rlo, rhi = rs.f(256)
+    @test rlo < trs < rhi                                     # ladder strictly brackets
 
     # --- envelope sanity: libquadmath error ≪ the 2^-90 claim (assert < 2^-100)
     rng = Xoshiro(2026)

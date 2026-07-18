@@ -78,6 +78,8 @@ _encl2(f::F, x::Float64, y::Float64; fq=nothing, yd=NaN) where {F} = EncloseF(_m
 # π · num / 2^k with exact power-of-two scaling; sign-aware directed bounds.
 function _encl_piscale(num::Int, k::Int)
     fq = () -> ldexp(Float128(π) * num, -k)
+    # eager Float64 estimate: π half-ulp + one multiply + exact ldexp ≤ ~1.5 ulp
+    yd = ldexp(Float64(π) * num, -k)
     EncloseF(prec -> setprecision(BigFloat, prec) do
         lo = setrounding(BigFloat, RoundDown) do
             p = num > 0 ? BigFloat(π) : setrounding(() -> BigFloat(π), BigFloat, RoundUp)
@@ -88,7 +90,7 @@ function _encl_piscale(num::Int, k::Int)
             ldexp(p * num, -k)
         end
         (lo, hi)
-    end, fq)
+    end, fq, yd)
 end
 
 # g(x…)/π for the arc-Pi variants: MPFR ladder with sign-aware denominator bounds;
@@ -96,6 +98,9 @@ end
 # composed faithful-op + π-constant + CR-division errors with ≥2^16 slack).
 function _encl_divpi(g::F, gq::G, xs::Float64...) where {F,G}
     fq = () -> gq(map(Float128, xs)...) / Float128(π)
+    # eager Float64 estimate: faithful g + π half-ulp + CR division ≤ ~2 ulp; the
+    # division by π ≈ 3.14 is well-conditioned, so no amplification anywhere
+    yd = g(xs...) / Float64(π)
     EncloseF(prec -> setprecision(BigFloat, prec) do
         lo = setrounding(BigFloat, RoundDown) do
             n = g(map(BigFloat, xs)...)
@@ -108,7 +113,7 @@ function _encl_divpi(g::F, gq::G, xs::Float64...) where {F,G}
             n / p
         end
         (lo, hi)
-    end, fq)
+    end, fq, yd)
 end
 
 # f(π·r) for the *Pi trig family on the exactly reduced r ∈ (0,2) with the
@@ -116,7 +121,12 @@ end
 # extremum (an ≤8-bit-significand r is never within 2^-9 of one), so the 4-combo
 # min/max of directed endpoint evaluations encloses. Pre-filter: one Float128 eval
 # (π-constant half-ulp + CR product half-ulp + trig envelope ≪ 2^-90).
-function _encl_pitrig(f::F, r::Float64) where {F}
+# The eager Float64 estimate is supplied by the CALLER as the Base.*pi native
+# (sinpi/cospi/tanpi): those are relative-faithful in the *result* domain even
+# adjacent to zeros/poles. Evaluating f(Float64(π)·r) instead would amplify the
+# π-rounding argument error by |πr|/|f| near the zeros of sin — measured at only
+# ~2× envelope slack for the closest format-reachable r — so it is NOT used.
+function _encl_pitrig(f::F, r::Float64; yd::Float64=NaN) where {F}
     fq = () -> f(Float128(π) * Float128(r))
     EncloseF(prec -> setprecision(BigFloat, prec) do
         ml = setrounding(() -> BigFloat(π) * r, BigFloat, RoundDown)
@@ -124,7 +134,7 @@ function _encl_pitrig(f::F, r::Float64) where {F}
         a = setrounding(() -> (f(ml), f(mh)), BigFloat, RoundDown)
         b = setrounding(() -> (f(ml), f(mh)), BigFloat, RoundUp)
         (min(a[1], a[2]), max(b[1], b[2]))
-    end, fq)
+    end, fq, yd)
 end
 
 # exact mod-2 reduction for the *Pi family: Float64 `rem` is exact by IEEE
@@ -289,13 +299,13 @@ function ωeval(::Val{:Sqrt}, x::Float64)
     isinf(x) && return Inf
     s = sqrt(x)
     fma(s, s, -x) == 0.0 && return s                          # exact square root
-    if _f128()
-        qx = Float128(x)
-        s128 = sqrt(qx)
-        fma(s128, s128, -qx) == 0 && return s128
-        return Enclose128F(prevfloat(s128), nextfloat(s128), _mpfr1(sqrt, x))
-    end
-    _encl1(sqrt, x)
+    # IEEE-CR hardware sqrt (≤ half an ulp, unconditional) is the ideal eager
+    # estimate; s is always finite/nonzero/normal here (x positive finite), so no
+    # degenerate guard is needed. Single call site keeps the return union to
+    # {Float64, EncloseF} — the former Float128/Enclose128F branch is dead for
+    # Float64 inputs: a dyadic √x has ≤ ⌈53/2⌉ = 27 significand bits, so any
+    # 113-bit-exact root is already 53-bit-exact and caught by the fma test above.
+    _encl1(sqrt, x; fq=() -> sqrt(Float128(x)), yd=s)
 end
 _mpfr_rsqrt(x::Float64) = prec -> setprecision(BigFloat, prec) do
     lo = setrounding(BigFloat, RoundDown) do
@@ -318,22 +328,12 @@ function ωeval(::Val{:RSqrt}, x::Float64)
         r = 1.0 / s
         fma(r, s, -1.0) == 0.0 && return r                    # 1/√x exact too ⇔ x = 4^k
     end
-    if _f128()
-        qx = Float128(x)
-        s = sqrt(qx)
-        if fma(s, s, -qx) == 0                                # √x exact at 113 bits
-            r = inv(s)
-            fma(r, s, Float128(-1)) == 0 && return r          # 1/√x exact too
-            return Enclose128F(prevfloat(r), nextfloat(r), _mpfr_rsqrt(x))
-        end
-        # √x ∈ (sl, sh) strictly (CR, inexact) ⇒ 1/√x ∈ (1/sh, 1/sl); each CR
-        # reciprocal is within half an ulp, so one outward step is a strict bracket.
-        sl, sh = prevfloat(s), nextfloat(s)
-        lo = prevfloat(inv(sh))
-        hi = nextfloat(inv(sl))
-        return Enclose128F(lo, hi, _mpfr_rsqrt(x))
-    end
-    EncloseF(_mpfr_rsqrt(x))
+    # Composition of two IEEE-CR ops (hardware sqrt, then divide, each ≤ half an
+    # ulp) gives |truth − yd| ≤ ~1.5 ulp ≈ 2⁻⁵¹·⁴ — ≥ 2⁶ slack under the 2⁻⁴⁵
+    # envelope. The fq stage composes the same two CR ops at 113 bits (≪ 2⁻⁹⁰).
+    # The former Float128 branch is dead for Float64 inputs (1/√x dyadic ⇔ x a
+    # power of 4, caught above); deleting it narrows the union to {Float64, EncloseF}.
+    EncloseF(_mpfr_rsqrt(x), () -> inv(sqrt(Float128(x))), 1.0 / s)
 end
 
 # ============================================================================
@@ -356,7 +356,7 @@ function ωeval(::Val{:ExpMinusOne}, x::Float64)
     x == -Inf && return -1.0
     x == Inf && return Inf
     iszero(x) && return 0.0
-    _encl1(expm1, x; fq=() -> expm1(Float128(x)))
+    _encl1(expm1, x; fq=() -> expm1(Float128(x)), yd=expm1(x))
 end
 function ωeval(::Val{:Log}, x::Float64)          # draft §4.11 Log rows
     isnan(x) && return NaN
@@ -425,7 +425,7 @@ function ωeval(::Val{:ArcSin}, x::Float64)
     iszero(x) && return 0.0
     x == 1.0 && return _encl_piscale(1, 1)                    #  π/2
     x == -1.0 && return _encl_piscale(-1, 1)                  # −π/2
-    _encl1(asin, x; fq=() -> asin(Float128(x)))
+    _encl1(asin, x; fq=() -> asin(Float128(x)), yd=asin(x))
 end
 function ωeval(::Val{:ArcCos}, x::Float64)
     isnan(x) && return NaN
@@ -433,7 +433,7 @@ function ωeval(::Val{:ArcCos}, x::Float64)
     x == 1.0 && return 0.0
     x == -1.0 && return _encl_piscale(1, 0)                   # π
     iszero(x) && return _encl_piscale(1, 1)                   # π/2
-    _encl1(acos, x; fq=() -> _acos128(Float128(x)))
+    _encl1(acos, x; fq=() -> _acos128(Float128(x)), yd=acos(x))
 end
 function ωeval(::Val{:ArcTan}, x::Float64)
     isnan(x) && return NaN
@@ -465,7 +465,7 @@ function ωeval(::Val{:ArcCosh}, x::Float64)
     x < 1.0 && return NaN
     x == 1.0 && return 0.0
     x == Inf && return Inf
-    _encl1(acosh, x; fq=() -> acosh(Float128(x)))
+    _encl1(acosh, x; fq=() -> acosh(Float128(x)), yd=acosh(x))
 end
 function ωeval(::Val{:ArcTanh}, x::Float64)
     isnan(x) && return NaN
@@ -473,7 +473,7 @@ function ωeval(::Val{:ArcTanh}, x::Float64)
     x == 1.0 && return Inf
     x == -1.0 && return -Inf
     iszero(x) && return 0.0
-    _encl1(atanh, x; fq=() -> atanh(Float128(x)))
+    _encl1(atanh, x; fq=() -> atanh(Float128(x)), yd=atanh(x))
 end
 
 # ============================================================================
@@ -487,7 +487,7 @@ function ωeval(::Val{:SinPi}, x::Float64)
     r == 0.5 && return 1.0
     r == 1.0 && return 0.0
     r == 1.5 && return -1.0
-    _encl_pitrig(sin, r)
+    _encl_pitrig(sin, r; yd=sinpi(r))
 end
 function ωeval(::Val{:CosPi}, x::Float64)
     isnan(x) && return NaN
@@ -497,7 +497,7 @@ function ωeval(::Val{:CosPi}, x::Float64)
     r == 0.5 && return 0.0
     r == 1.0 && return -1.0
     r == 1.5 && return 0.0
-    _encl_pitrig(cos, r)
+    _encl_pitrig(cos, r; yd=cospi(r))
 end
 function ωeval(::Val{:TanPi}, x::Float64)
     isnan(x) && return NaN
@@ -514,7 +514,7 @@ function ωeval(::Val{:TanPi}, x::Float64)
     r == 0.75 && return -1.0
     r == 1.25 && return 1.0
     r == 1.75 && return -1.0
-    _encl_pitrig(tan, r)
+    _encl_pitrig(tan, r; yd=tanpi(r))
 end
 function ωeval(::Val{:ArcSinPi}, x::Float64)
     isnan(x) && return NaN
@@ -550,7 +550,7 @@ function ωeval(::Val{:Hypot}, x::Float64, y::Float64)
     (isnan(x) | isnan(y)) && return NaN
     iszero(y) && return abs(x)                               # exact
     iszero(x) && return abs(y)
-    _encl2(hypot, x, y; fq=() -> hypot(Float128(x), Float128(y)))
+    _encl2(hypot, x, y; fq=() -> hypot(Float128(x), Float128(y)), yd=hypot(x, y))
 end
 function ωeval(::Val{:ArcTan2}, y::Float64, x::Float64)      # [interp]: single-zero branch cuts
     (isnan(y) | isnan(x)) && return NaN
@@ -566,7 +566,7 @@ function ωeval(::Val{:ArcTan2}, y::Float64, x::Float64)      # [interp]: single
     x == Inf && return 0.0
     x == -Inf && return _encl_piscale(y > 0 ? 1 : -1, 0)         # ±π
     iszero(x) && return _encl_piscale(y > 0 ? 1 : -1, 1)         # ±π/2
-    _encl2(atan, y, x; fq=() -> atan(Float128(y), Float128(x)))  # MPFR atan2, correct per mode
+    _encl2(atan, y, x; fq=() -> atan(Float128(y), Float128(x)), yd=atan(y, x))  # MPFR atan2, correct per mode
 end
 function ωeval(::Val{:ArcTan2Pi}, y::Float64, x::Float64)
     (isnan(y) | isnan(x)) && return NaN

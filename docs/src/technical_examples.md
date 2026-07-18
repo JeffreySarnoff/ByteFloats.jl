@@ -70,6 +70,85 @@ using ByteFloats: order_key
 -1.0 → 64      0.0 → 129      1.0 → 193      NaN → 65535
 ```
 
+## General AI
+
+### Ranking safety: an exhaustive monotonicity audit of score conversion
+
+Decision and ranking systems consume scores through *order*. If scores are
+produced in one format and compared in another, the conversion must be monotone
+— and formats are small enough to prove it by enumeration rather than trust it.
+Walk every `Binary8p3se` datum in total order and check that its `Binary8p4se`
+image never goes backward on the integer order keys:
+
+```julia
+using ByteFloats
+using ByteFloats: order_key
+
+function monotone_conversion(::Type{From}, ::Type{To}) where {From,To}
+    prev = nothing
+    for v in sort(From.(0x00:UInt8(2^bitwidth(From) - 1)))
+        isnan(decode(v)) && continue
+        g = Convert(To, RNE_SatNone, v)
+        prev !== nothing && order_key(g) < order_key(prev) && return false
+        prev = g
+    end
+    true
+end
+monotone_conversion(Binary8p3se, Binary8p4se)
+```
+
+```
+true
+```
+
+Run this for every `(From, To, ρ)` triple your system actually uses; it is a few
+hundred integer comparisons per triple. A ranking pipeline whose conversions all
+pass this audit cannot invert a preference by changing formats — a guarantee no
+amount of spot-testing provides.
+
+### κ-safe decision margins for approximate evaluators
+
+Search under a compute budget often wants a cheap, approximate evaluation
+function. The κ registry turns "how approximate?" into a *measured* code-point
+bound — and code-point bounds compose into a decision rule: **if two defined
+evaluations differ by more than 2κ code points along the total order, the
+approximate evaluator cannot invert their comparison.** Verify the rule
+exhaustively for a κ = 2 evaluator:
+
+```julia
+using ByteFloats: order_key
+
+fast(x) = (r = Exp(Binary8p4se, RNE_SatNone, x);
+           isfinite(decode(r)) ? NextGreaterThan(NextGreaterThan(r)) : r)
+κ, exhaustive = measure_kappa(fast, :Exp, Binary8p4se, (Binary8p4se,), RNE_SatNone)
+
+function margin_audit(fast, κ)
+    codes = [rawvalue(Binary8p4se, UInt8(c)) for c in 0:255]
+    safe = violations = 0
+    for a in codes, b in codes
+        da, db = Exp(Binary8p4se, RNE_SatNone, a), Exp(Binary8p4se, RNE_SatNone, b)
+        (isnan(decode(da)) || isnan(decode(db))) && continue
+        codedistance(da, db) > 2κ || continue
+        safe += 1
+        (order_key(fast(a)) < order_key(fast(b))) ==
+            (order_key(da) < order_key(db)) || (violations += 1)
+    end
+    (safe, violations)
+end
+(κ, exhaustive, margin_audit(fast, κ)...)
+```
+
+```
+(2.0, true, 49522, 0)
+```
+
+49,522 operand pairs clear the 2κ margin, and the approximate evaluator agrees
+with the defined ordering on every one of them — zero violations, exhaustively.
+Inside the margin, comparisons are genuinely undecidable at this κ; a search can
+treat sub-margin comparisons as ties to expand, or escalate those few nodes to
+the exact evaluator. Either way the pruning is *provably* sound, with κ measured
+at registration rather than promised.
+
 ## Machine Learning
 
 ### Verifying a quantizer exhaustively against an independent reference
@@ -202,6 +281,46 @@ count(decode(ByteFloats.project(Binary8p4se, σ4, x; R)) == 2.25 for R in 0:15)
 
 Sweeping `R` like this turns "is my stochastic pipeline unbiased?" from a statistical
 question into an exhaustive one — the pattern the shipped test suite uses.
+
+### An accelerator-style activation, κ-measured: hard-tanh vs Tanh
+
+Hardware activation units often ship piecewise approximations. The κ machinery
+makes the substitution honest: measure the approximation's worst code-point
+deviation from the defined activation, exhaustively, and register it under that
+measured bound. Hard-tanh — `clamp(x, −1, 1)` — as a stand-in for `Tanh`:
+
+```julia
+one4 = Binary8p4se(1.0)
+hardtanh(x) = Clamp(Binary8p4se, RNE_SatNone, x, Negate(one4), one4)
+
+κ, exhaustive = measure_kappa(hardtanh, :Tanh, Binary8p4se, (Binary8p4se,), RNE_SatNone)
+(κ, exhaustive)
+```
+
+```
+(4.0, true)                # worst deviation: 4 code points, verified on all 256 inputs
+```
+
+Where is it worst? At `x = 1.0`: hard-tanh returns 1.0 while the defined
+`tanh(1.0)` is 0.75 — four code points along the total order. The registration
+round-trip, including the conformance surface:
+
+```julia
+impl = register_approx!(:hardtanh_act, :Tanh, Binary8p4se, (Binary8p4se,),
+                        RNE_SatNone, hardtanh; κ=4)
+(kappa(:hardtanh_act), kappa_measured(impl), :hardtanh_act in list_approx())
+```
+
+```
+(4.0, 4.0, true)           # declared = measured; conformance_report() now lists it
+```
+
+(`unregister_approx!(:hardtanh_act)` removes it.) Declaring `κ=3` would be
+*rejected* — understatement is impossible by construction. The decision of
+whether a κ = 4 activation is acceptable now belongs to your accuracy budget,
+not to hope: combined with the margin rule from the General AI section, any two
+pre-activations whose defined `Tanh` images sit more than 8 code points apart
+keep their order under hard-tanh, provably.
 
 ### Benchmarking without measuring the dispatcher
 

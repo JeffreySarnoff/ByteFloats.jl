@@ -60,6 +60,98 @@ julia> Multiply(Binary8p4se, RNE_SatFinite, w, two)
 Binary8p4se(224.0 ≡ 0x7e)
 ```
 
+## General AI
+
+### Log-odds belief updating — and where tiny formats bite reasoning
+
+Classic probabilistic reasoning: accumulate independent evidence as log-likelihood
+ratios. A sensor with hit rate 0.85 and false-alarm rate 0.30 contributes
+`log(0.85/0.30) ≈ 1.0415` per alarm. In `Binary8p3se` that datum is 1.0 — and the
+running belief stalls exactly the way the gradient accumulator does in the Deep
+Learning section:
+
+```julia
+using ByteFloats
+
+function logodds_demo(nalarms)
+    llr = Binary8p3se(log(0.85 / 0.30))      # quantized evidence weight
+    acc = Binary8p3se(0.0)
+    for _ in 1:nalarms
+        acc = Add(Binary8p3se, RNE_SatNone, acc, llr)
+    end
+    post(l) = 1 / (1 + exp(-l))
+    exact = nalarms * log(0.85 / 0.30)
+    (decode(llr), round(exact; digits=2), decode(acc),
+     round(post(exact); digits=5), round(post(decode(acc)); digits=5))
+end
+logodds_demo(12)
+```
+
+```
+(1.0, 12.5, 8.0, 1.0, 0.99966)
+# llr datum, exact log-odds, quantized log-odds, exact posterior, quantized posterior
+```
+
+The accumulator is wrong by a third (8.0 vs 12.5 — near 8 the ulp is 2.0, so
+`8 + 1` rounds straight back to 8), yet the *decision* is untouched: both
+posteriors are ≈ 1. Threshold decisions need order, not magnitude — which is why
+coarse formats work in reasoning pipelines far past the point where their
+arithmetic looks broken. When magnitude does matter, the cures are the same as
+for gradients: a wider accumulator format, or stochastic rounding.
+
+### Fuzzy inference in an unsigned format
+
+Membership degrees live in [0, 1] and are never negative — a job for an unsigned
+finite format. `Binary8p6uf` gives a [0, 15.5] range with 1/32 resolution at 1;
+the classic fuzzy connectives are registry operations (`Minimum` = Gödel t-norm,
+`Maximum` = s-norm, `Multiply` = product t-norm):
+
+```julia
+F = Binary8p6uf
+trap(x, a, b, c, d) = clamp(min((x - a) / (b - a), 1.0, (d - x) / (d - c)), 0.0, 1.0)
+warm = F(trap(26.0, 15, 20, 24, 28))         # membership of 26 °C in "warm"
+hot  = F(trap(26.0, 24, 30, 100, 101))       # … and in "hot"
+
+(decode(warm), decode(hot),
+ decode(Minimum(F, RNE_SatNone, warm, hot)),      # warm AND hot
+ decode(Maximum(F, RNE_SatNone, warm, hot)),      # warm OR hot
+ decode(Multiply(F, RNE_SatFinite, warm, hot)))   # product t-norm
+```
+
+```
+(0.5, 0.3359375, 0.3359375, 0.5, 0.16796875)
+```
+
+Because every connective is a bit-exact registry op, a fuzzy rule base evaluated
+in `Binary8p6uf` is *reproducible across machines to the code point* — a property
+sampled float pipelines cannot promise.
+
+### Search heuristics: what quantized scores keep is the ordering
+
+Game-tree and beam search consume evaluation scores only through comparisons.
+Quantizing 200 heuristic scores to 8 bits collapses them onto 78 distinct code
+points — yet the argmax survives, and sorting is exact (integer order keys, O(n)
+counting sort, single NaN ordered last deterministically):
+
+```julia
+using Random
+rng = Xoshiro(21)
+scores = randn(rng, 200) .* 3
+q = Binary8p4se.(scores)
+
+(argmax(scores), argmax(decode.(q)), argmax(scores) == argmax(decode.(q)),
+ decode.(sort(q; rev=true)[1:5]), length(unique(codepoint.(q))))
+```
+
+```
+(140, 140, true, [8.0, 7.5, 6.5, 6.0, 6.0], 78)
+```
+
+The two 6.0s are the caveat: quantization creates *ties* the exact scores did not
+have. `TotalOrder`'s deterministic tie behavior means the search expands the same
+node on every run — ties change which answer you get, not whether you can
+reproduce it.
+
 ## Machine Learning
 
 ### Quantizing a weight tensor and measuring the damage
@@ -219,6 +311,52 @@ accumulate_demo(400, 0.011)
 The stochastic result is noisy (5.0 vs 4.4 on this seed) but unbiased; the RNE result
 is *wrong by 35×* and no amount of steps will fix it. In practice you keep a wider
 accumulator when you can — and use stochastic rounding when you can't.
+
+### Activation functions are 256-byte lookup tables
+
+For pure specs, a unary activation over an 8-bit format is a *finite function* —
+the whole nonlinearity is one 256-byte table, built bit-exactly through the
+scalar path and then gathered per element. This is precisely the activation LUT
+you would burn into an accelerator:
+
+```julia
+using ByteFloats, Random
+empty_tables!()
+rng = Xoshiro(4)
+pre = Binary8p4se.(randn(rng, 4096) .* 2.5)       # pre-activations, ±2.5σ
+act = Tanh(Binary8p4se, RNE_SatNone, pre)          # table-gather kernel
+
+(table_bytes(),
+ round(count(v -> abs(decode(v)) == 1.0, act) / 4096; digits=3),
+ length(unique(codepoint.(act))),
+ decode(NextLessThan(one(Binary8p4se))))
+```
+
+```
+(256, 0.384, 100, 0.9375)
+# LUT size; fraction saturated to ±1; distinct output codes; last value below 1
+```
+
+Two things worth staring at. First, **saturation is severe at this input scale**:
+38% of pre-activations land exactly on ±1 — under `RNE`, `tanh` reaches 1 as soon
+as the true value rounds past the midpoint of the last gap, and the entire
+saturated tail becomes indistinguishable to the next layer. (Under
+`TowardNegative` the asymptote is honored instead: `tanh` of any finite positive
+input projects to 0.9375, never 1 — the projection mode is part of the activation
+design space.) Second, the choice of nonlinearity changes *information retention*
+in code points, not just shape:
+
+```julia
+actS = Softplus(Binary8p4se, RNE_SatNone, pre)
+(length(unique(codepoint.(actS))), table_bytes())
+```
+
+```
+(61, 512)          # softplus keeps 61 distinct codes here; two LUTs now cached
+```
+
+Auditing an activation for a format is this cheap: enumerate all 256 inputs,
+look at the output histogram, count what survives.
 
 ### Packing a quantized model
 

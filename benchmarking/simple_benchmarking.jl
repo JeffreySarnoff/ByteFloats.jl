@@ -18,7 +18,7 @@ using Statistics: median
 using Random
 using ByteFloats
 using ByteFloats: project, order_key, get_table, empty_tables!, _f128, opinfo, OP_REGISTRY,
-             _UNARY_OPS, _BINARY_OPS, _TERNARY_OPS, rawvalue, decode, apply_op
+             _UNARY_OPS, _BINARY_OPS, _TERNARY_OPS, rawvalue, decode
 
 # ---------------------------------------------------------------------------
 # formatting helpers
@@ -58,87 +58,9 @@ function write_table(io, title, note, rows; extra_header="")
     end
 end
 
-# Random operand pools, parameterized by operand class:
-#   :all    — uniform over every code point: NaN and ±Inf ARE sampled (the honest
-#             mix; medians for domain-restricted ops are diluted by NaN fast rows)
-#   :nonan  — the NaN code point is excluded; ±Inf and every finite datum sampled
-#   :finite — NaN and ±Inf excluded; finite datums only (zeros/subnormals kept)
-# Each report table states its class explicitly.
-# The :indomain class is derived from the ORACLE rather than a hand-maintained
-# domain map: an operand tuple is in-domain iff every operand is finite and the
-# operation's defined result under the reference ρ is not NaN. This can never
-# drift from the implementation, and it is exactly the pool that unmasked the
-# Sqrt and ArcCos/ArcCosh regressions during diagnosis. Exact special rows on
-# legitimate domain points (e.g. Log2 at powers of two) remain sampled.
-# Table order within each scalar section: most-filtered first. An empty tag means
-# the table title carries no operand-class suffix (the all-code-points default).
-const _POOL_CLASSES = (
-    (:indomain, "safe args",
-     "Finite operands within each operation's safe domain — the fully unmasked " *
-     "per-operation scalar cost. The argument-restricted ops (Sqrt, RSqrt, Log, " *
-     "Log2, LogOnePlus, Recip, Divide, ArcSin, ArcCos, ArcCosh, ArcTanh) draw from " *
-     "explicit per-argument safe-domain predicates; every other op uses finite " *
-     "operand tuples whose defined result is not NaN (oracle-derived)."),
-    (:finite, "no NaN, Inf args",
-     "Operands exclude NaN and ±Inf; finite datums only (zeros and subnormals kept). " *
-     "Domain-restricted ops still take NaN fast rows on out-of-domain finite operands."),
-    (:nonan,  "no NaN args",
-     "Operands exclude the NaN code point; ±Inf and every finite datum are sampled."),
-    (:all,    "",
-     "Operands drawn uniformly over ALL code points — NaN and ±Inf are sampled; " *
-     "medians of domain-restricted ops are diluted by instant NaN rows."))
-
-# Explicit safe domains for the argument-restricted operations: one predicate per
-# argument position on the decoded Float64 datum (`nothing` = any finite datum).
-# Upper "< Inf" bounds are implied by the finite operand pool. Ops not listed use
-# the oracle-derived filter below (finite tuples whose defined result is not NaN).
-const _SAFE_DOMAINS = Dict{Symbol,Tuple}(
-    :Sqrt       => (d -> 0.0 <= d,),          # 0 ≤ x < ∞
-    :RSqrt      => (d -> 0.0 < d,),           # 0 < x < ∞
-    :Log        => (d -> 0.0 < d,),           # 0 < x < ∞
-    :Log2       => (d -> 0.0 < d,),           # 0 < x < ∞
-    :LogOnePlus => (d -> -1.0 < d,),          # −1 < x < ∞
-    :Recip      => (d -> d != 0.0,),          # x ≠ 0
-    :Divide     => (nothing, d -> d != 0.0),  # y ≠ 0 (x unrestricted)
-    :ArcSin     => (d -> -1.0 <= d <= 1.0,),  # −1 ≤ x ≤ 1
-    :ArcCos     => (d -> -1.0 <= d <= 1.0,),  # −1 ≤ x ≤ 1
-    :ArcCosh    => (d -> 1.0 <= d,),          # 1 ≤ x < ∞
-    :ArcTanh    => (d -> -1.0 < d < 1.0,))    # −1 < x < 1
-
-# Safe-args operand tuples for `op`: per-argument filtered pools where an explicit
-# safe domain is declared (arguments are then generated directly within it);
-# otherwise rejection-sample finite tuples whose defined result the oracle says
-# is not NaN. Never empty for any registry op at K ≥ 3.
-function indomain_pool(op::Symbol, ::Type{T}, arity::Int, n) where {T<:Binary}
-    finite = [rawvalue(T, UInt8(c)) for c in 0:(1 << bitwidth(T)) - 1
-              if isfinite(decode(rawvalue(T, UInt8(c))))]
-    if haskey(_SAFE_DOMAINS, op)
-        preds = _SAFE_DOMAINS[op]
-        length(preds) == arity ||
-            error("safe-domain arity mismatch for :$op: $(length(preds)) predicates, arity $arity")
-        pools = ntuple(i -> (pr = preds[i]; pr === nothing ? finite :
-                             filter(v -> pr(decode(v))::Bool, finite)), arity)
-        any(isempty, pools) && error("empty safe-domain pool for :$op")
-        return [ntuple(i -> rand(pools[i]), arity) for _ in 1:n]
-    end
-    tuples = Vector{NTuple{arity,T}}()
-    tries = 0
-    while length(tuples) < n && tries < 64n
-        t = ntuple(_ -> rand(finite), arity)
-        r = apply_op(Val(op), T, RNE_SatNone, 0, map(decode, t)...)
-        isnan(decode(r)) || push!(tuples, t)
-        tries += 1
-    end
-    isempty(tuples) && error("no in-domain operands found for :$op")
-    tuples
-end
-function codes_pool(::Type{T}, n; class::Symbol=:all) where {T<:Binary}
-    codes = [rawvalue(T, UInt8(c)) for c in 0:(1 << bitwidth(T)) - 1]
-    class === :nonan  && filter!(v -> !isnan(decode(v)), codes)
-    class === :finite && filter!(v -> isfinite(decode(v)), codes)
-    class in (:all, :nonan, :finite) || throw(ArgumentError("unknown operand class $class"))
-    [rand(codes) for _ in 1:n]
-end
+# random finite-heavy operand pools (all codes ⇒ honest NaN/Inf mix where noted)
+codes_pool(::Type{T}, n) where {T<:Binary} =
+    [rawvalue(T, UInt8(rand(0:(1 << bitwidth(T)) - 1))) for _ in 1:n]
 
 # ---------------------------------------------------------------------------
 # preflight: abort rather than publish dispatch measurements
@@ -184,28 +106,12 @@ _bench_op(f::F, ::Type{T}, pool, ::Val{2}) where {F,T} =
 _bench_op(f::F, ::Type{T}, pool, ::Val{3}) where {F,T} =
     @be (rand(pool), rand(pool), rand(pool)) (t -> f(T, RNE_SatNone, t[1], t[2], t[3]))(_)
 
-# tuple-pool twins of _bench_op for the per-op :indomain pools
-_bench_op_nt(f::F, ::Type{T}, tpool, ::Val{1}) where {F,T} =
-    @be rand(tpool) (t -> f(T, RNE_SatNone, t[1]))(_)
-_bench_op_nt(f::F, ::Type{T}, tpool, ::Val{2}) where {F,T} =
-    @be rand(tpool) (t -> f(T, RNE_SatNone, t[1], t[2]))(_)
-_bench_op_nt(f::F, ::Type{T}, tpool, ::Val{3}) where {F,T} =
-    @be rand(tpool) (t -> f(T, RNE_SatNone, t[1], t[2], t[3]))(_)
-
-function bench_scalar_ops(::Type{T}, names, arity; class::Symbol=:all) where {T<:Binary}
+function bench_scalar_ops(::Type{T}, names, arity) where {T<:Binary}
+    pool = codes_pool(T, 4096)
     rows = Row[]
-    if class === :indomain
-        for op in names                      # pool is per-op: the domain is the op's
-            tpool = indomain_pool(op, T, arity, 4096)
-            b = _bench_op_nt(getfield(ByteFloats, op), T, tpool, Val(arity))
-            push!(rows, Row(string(op), b))
-        end
-    else
-        pool = codes_pool(T, 4096; class)
-        for op in names
-            b = _bench_op(getfield(ByteFloats, op), T, pool, Val(arity))
-            push!(rows, Row(string(op), b))
-        end
+    for op in names
+        b = _bench_op(getfield(ByteFloats, op), T, pool, Val(arity))
+        push!(rows, Row(string(op), b))
     end
     sort!(rows; by=r -> r.med)
 end
@@ -351,62 +257,46 @@ function generate_report(path::AbstractString="benchmark_report.md"; seed=2026)
                 "  ·  Float128 paths: ", _f128() ? "enabled" : "disabled",
                 "  ·  Chairmarks ", pkgversion(Chairmarks))
         println(io, "\nReference format for per-operation tables: `Binary8p4se` under ",
-                "`(NearestTiesToEven, SatNone)`. Every table names its operand class: ",
-                "the scalar-operation tables appear in four variants — all code points ",
-                "(NaN and ±Inf sampled), NaN excluded, finite-only, and per-operation ",
-                "in-domain — and every other ",
-                "sampled table uses the all-code-points pool, identified in its note. ",
-                "Times are per call; medians with minima alongside. Methodology per the ",
-                "recorded benchmark doctrine: type-parameterized barriers, untimed setup, ",
-                "specialization preflight.")
+                "`(NearestTiesToEven, SatNone)`; operand pools draw uniformly over all ",
+                "code points (an honest NaN/±Inf mix). Times are per call; medians with ",
+                "minima alongside. Methodology per the recorded benchmark doctrine: ",
+                "type-parameterized barriers, untimed setup, specialization preflight.")
 
         write_table(io, "Core primitives",
-            "The decode/compare/step/classify layer plus the projection engine." * " Operands: all code points — NaN and ±Inf sampled.",
+            "The decode/compare/step/classify layer plus the projection engine.",
             bench_primitives(T))
-        # Scalar operations: each arity measured under all three operand classes,
-        # so operand-class effects (NaN fast rows, ±Inf special rows) are separable.
-        for (names, arity, hdr) in ((_UNARY_OPS, 1, "unary (30)"),
-                                    (_BINARY_OPS, 2, "binary (18)"),
-                                    (_TERNARY_OPS, 3, "ternary (3)"))
-            for (class, tag, classnote) in _POOL_CLASSES
-                note = classnote * " Sorted by median."
-                if arity == 1 && class === :all
-                    note *= " Transcendental rows mix special-row fast returns with " *
-                            "enclosure-path evaluations, so these are *scalar-path* costs; " *
-                            "bulk unary work routes through 256-byte tables (see Array kernels)."
-                end
-                title = isempty(tag) ? "Scalar operations — $hdr" :
-                                       "Scalar operations — $hdr — $tag"
-                write_table(io, title, note, bench_scalar_ops(T, names, arity; class))
-            end
-        end
+        write_table(io, "Scalar operations — unary (30)",
+            "Sorted by median. Random operands: transcendental rows mix special-row " *
+            "fast returns with enclosure-path evaluations, so these are *scalar-path* " *
+            "costs; bulk unary work routes through 256-byte tables (see Array kernels).",
+            bench_scalar_ops(T, _UNARY_OPS, 1))
+        write_table(io, "Scalar operations — binary (18)", "Sorted by median.",
+            bench_scalar_ops(T, _BINARY_OPS, 2))
+        write_table(io, "Scalar operations — ternary (3)", "Sorted by median.",
+            bench_scalar_ops(T, _TERNARY_OPS, 3))
         write_table(io, "Format sensitivity",
             "Same three binary ops across formats; `Binary8p1uf` exercises the " *
-            "wide-exponent-spread escalations, small-K formats the tiny-table regime." *
-            " Operands: all code points — NaN and ±Inf sampled.",
+            "wide-exponent-spread escalations, small-K formats the tiny-table regime.",
             bench_format_sensitivity((:Add, :Divide, :Multiply)))
         write_table(io, "Projection by rounding/saturation mode",
-            "`project(Binary8p4se, ρ, x)` over the mode vocabulary (stochastic budgets N = 8)." * " Operands: all code points — NaN and ±Inf sampled.",
+            "`project(Binary8p4se, ρ, x)` over the mode vocabulary (stochastic budgets N = 8).",
             bench_modes(T))
         write_table(io, "Array kernels (vmap)",
             "Warm caches: table specializations prebuilt, so table rows measure the " *
-            "gather; scalar-loop rows measure the full compute pipeline per element." *
-            " Operands: all code points — NaN and ±Inf sampled.",
+            "gather; scalar-loop rows measure the full compute pipeline per element.",
             bench_kernels(T); extra_header="per element")
         write_table(io, "Sorting (64 K values)",
-            "Counting sort is installed as the default algorithm for `Binary` vectors." * " Operands: all code points — NaN and ±Inf sampled.",
+            "Counting sort is installed as the default algorithm for `Binary` vectors.",
             bench_sorting(T))
         write_table(io, "Table builds (oracle + projection, Float128-first)",
             "Cold cache per sample (`empty_tables!` in untimed setup); JIT pre-warmed. " *
             "The warm-hit column is the steady-state cost of `get_table` when the " *
-            "specialization is already cached (median / min). Table entries enumerate " *
-            "every code point by construction (NaN and ±Inf included).",
+            "specialization is already cached (median / min).",
             bench_table_builds(); extra_header="warm hit")
         write_table(io, "Block and scaled operations",
-            "Elements `Binary8p4se`, scales `Binary8p1uf`, B = 32." * " Operands: all code points — NaN and ±Inf sampled.",
+            "Elements `Binary8p4se`, scales `Binary8p1uf`, B = 32.",
             bench_blocks(Binary8p4se, Binary8p1uf); extra_header="per lane")
-        write_table(io, "Conversions and packed storage",
-            "Operands: all code points — NaN and ±Inf sampled.",
+        write_table(io, "Conversions and packed storage", "",
             bench_conversions(); extra_header="per element")
 
         println(io, "\n---\n*All numbers from this machine/run; absolute values vary ",

@@ -26,6 +26,7 @@ makedocs(;
         "User Examples" => "user_examples.md",
         "Technical Guide" => "technical_guide.md",
         "Technical Examples" => "technical_examples.md",
+        "Adding Operations" => "new_operations.md",
         "API Reference" => "reference.md",
     ],
     # The guides intentionally reference some names that carry no docstrings yet

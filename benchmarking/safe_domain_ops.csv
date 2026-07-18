@@ -1,0 +1,12 @@
+op,domain,notes
+Sqrt,0 <= x < Inf
+RSqrt, 0 < x < Inf
+Log, 0 < x < Inf
+Log2, 0 < x < Inf
+LogOnePlus,-1 < x < Inf
+Recip,x != 0
+Divide,y != 0
+ArcSin,-1 <= x <= 1
+ArcCos,-1 <= x <= 1
+ArcCosh,1 <= x < Inf
+ArcTanh,-1 < x < 1

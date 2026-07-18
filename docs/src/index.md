@@ -33,4 +33,7 @@ true
 - **[Technical Examples](@ref)** — internals-level recipes: pipeline introspection,
   exhaustive verification of custom code, κ measurement, doctrine-compliant
   benchmarking.
+- **[Adding Operations](@ref)** — how to add new scalar (unary through
+  quaternary) and block (scaled, elementwise, reductive) operations with every
+  guarantee intact: registry mechanics, ω-semantics duties, worked examples.
 - **[API Reference](@ref)** — docstrings for the documented public surface.
