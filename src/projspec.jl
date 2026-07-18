@@ -6,14 +6,14 @@
 # in the type: a kernel's randomness consumption is a compile-time fact, and
 # pure-vs-stochastic dispatch is static (pure ⇒ tabulable, stochastic ⇒ never).
 
-abstract type RoundingModeP3109 end
+abstract type RoundingMode3109 end
 
-struct NearestTiesToEven <: RoundingModeP3109 end
-struct NearestTiesToAway <: RoundingModeP3109 end
-struct TowardPositive    <: RoundingModeP3109 end
-struct TowardNegative    <: RoundingModeP3109 end
-struct TowardZero        <: RoundingModeP3109 end
-struct ToOdd             <: RoundingModeP3109 end
+struct NearestTiesToEven <: RoundingMode3109 end
+struct NearestTiesToAway <: RoundingMode3109 end
+struct TowardPositive    <: RoundingMode3109 end
+struct TowardNegative    <: RoundingMode3109 end
+struct TowardZero        <: RoundingMode3109 end
+struct ToOdd             <: RoundingMode3109 end
 
 # Stochastic variants (draft §4.7.4): R random bits with 0 ≤ R < 2^N are supplied
 # per projected element. N is capped at 60 so every predicate stays in Int64
@@ -24,15 +24,15 @@ struct ToOdd             <: RoundingModeP3109 end
     nothing
 end
 """Stochastic rounding, variant A of draft §4.7.4: RoundAway ⟺ ⌊ν·2^N⌋ + R ≥ 2^N."""
-struct StochasticA{N} <: RoundingModeP3109
+struct StochasticA{N} <: RoundingMode3109
     StochasticA{N}() where {N} = (_check_nrandbits(N); new{N}())
 end
 """Stochastic rounding, variant B: RoundAway ⟺ ⌊ν·2^(N+1)⌋ + (2R+1) ≥ 2^(N+1)."""
-struct StochasticB{N} <: RoundingModeP3109
+struct StochasticB{N} <: RoundingMode3109
     StochasticB{N}() where {N} = (_check_nrandbits(N); new{N}())
 end
 """Stochastic rounding, variant C: RoundAway ⟺ RNITE(ν·2^N) + R ≥ 2^N."""
-struct StochasticC{N} <: RoundingModeP3109
+struct StochasticC{N} <: RoundingMode3109
     StochasticC{N}() where {N} = (_check_nrandbits(N); new{N}())
 end
 const AnyStochastic = Union{StochasticA,StochasticB,StochasticC}
@@ -43,14 +43,14 @@ struct SatPropagate <: SaturationMode end   # keep representable infinities, cla
 struct SatNone      <: SaturationMode end   # draft's direction/signedness/domain-governed rows
 
 """
-    ProjSpec{R<:RoundingModeP3109, S<:SaturationMode}
+    ProjSpec{R<:RoundingMode3109, S<:SaturationMode}
 
 A projection specification ρ = (rounding mode, saturation mode), draft §4.2.
 Zero-size; construct as `ProjSpec(NearestTiesToEven(), SatNone())` or via the
 exported constants. Kernels specialize on its type.
 """
-struct ProjSpec{R<:RoundingModeP3109,S<:SaturationMode} end
-ProjSpec(::R, ::S) where {R<:RoundingModeP3109,S<:SaturationMode} = ProjSpec{R,S}()
+struct ProjSpec{R<:RoundingMode3109,S<:SaturationMode} end
+ProjSpec(::R, ::S) where {R<:RoundingMode3109,S<:SaturationMode} = ProjSpec{R,S}()
 
 roundingmode(::ProjSpec{R,S}) where {R,S} = R()
 saturationmode(::ProjSpec{R,S}) where {R,S} = S()
@@ -60,17 +60,17 @@ const RoundOf = roundingmode
 const SatOf = saturationmode
 
 # ---- queries
-isstochastic(::Type{<:RoundingModeP3109}) = false
+isstochastic(::Type{<:RoundingMode3109}) = false
 isstochastic(::Type{<:AnyStochastic}) = true
-isstochastic(m::RoundingModeP3109) = isstochastic(typeof(m))
+isstochastic(m::RoundingMode3109) = isstochastic(typeof(m))
 isstochastic(::ProjSpec{R,S}) where {R,S} = isstochastic(R)
 
 """Number of random bits N consumed per projected element; 0 for pure modes."""
-nrandbits(::Type{<:RoundingModeP3109}) = 0
+nrandbits(::Type{<:RoundingMode3109}) = 0
 nrandbits(::Type{StochasticA{N}}) where {N} = N
 nrandbits(::Type{StochasticB{N}}) where {N} = N
 nrandbits(::Type{StochasticC{N}}) where {N} = N
-nrandbits(m::RoundingModeP3109) = nrandbits(typeof(m))
+nrandbits(m::RoundingMode3109) = nrandbits(typeof(m))
 nrandbits(::ProjSpec{R,S}) where {R,S} = nrandbits(R)
 
 # ---- defaults (design §10.2)
@@ -85,7 +85,7 @@ projmode(::RoundingMode{:NearestTiesAway}) = NearestTiesToAway()
 projmode(::RoundingMode{:Up})              = TowardPositive()
 projmode(::RoundingMode{:Down})            = TowardNegative()
 projmode(::RoundingMode{:ToZero})          = TowardZero()
-projmode(m::RoundingModeP3109)             = m
+projmode(m::RoundingMode3109)             = m
 
 # ---- draft-style printing: "(NearestTiesToEven, SatNone)"
 _modename(m) = String(nameof(typeof(m)))

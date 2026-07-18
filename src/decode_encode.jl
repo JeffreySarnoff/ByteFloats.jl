@@ -159,7 +159,7 @@ function Class(v::Binary)
     d == Inf && return ClassPosInf
     d == -Inf && return ClassNegInf
     iszero(v) && return ClassZero
-    sub = issubnormal_p3109(v)
+    sub = issubnormal_3109(v)
     if d > 0
         return sub ? ClassPosSubnormal : ClassPosNormal
     else

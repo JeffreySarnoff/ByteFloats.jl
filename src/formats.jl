@@ -169,12 +169,12 @@ function Base.signbit(v::Binary{K,P,S,E}) where {K,P,S,E}
     isnan(v) && return false
     codepoint(v) >= signmask(typeof(v)) && codepoint(v) != nan_code(typeof(v))
 end
-function issubnormal_p3109(v::Binary{K,P,S,E}) where {K,P,S,E}
+function issubnormal_3109(v::Binary{K,P,S,E}) where {K,P,S,E}
     (isnan(v) | isinf(v) | iszero(v)) && return false
     m = S ? (codepoint(v) & ~signmask(typeof(v))) : codepoint(v)
     m < UInt8(1 << (P - 1))
 end
-Base.issubnormal(v::Binary) = issubnormal_p3109(v)
+Base.issubnormal(v::Binary) = issubnormal_3109(v)
 
 # `one` must be representable; it always is for these formats (biased exp fits by construction).
 Base.one(T::Type{<:Binary}) = T(1.0)

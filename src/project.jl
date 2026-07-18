@@ -30,7 +30,7 @@ stochastic random bits (0 ≤ R < 2^N), ignored for pure modes.
 # Float64 carrier (bitops plan K3): mask-extracted guard/round/sticky. Specials,
 # zeros, sticky-zeros, and (Convert-only-reachable) subnormal Float64 inputs bail
 # to the generic core; the exhaustive equivalence gate pins bit ≡ generic.
-function round_to_precision(P::Int, B::Int, μ::RoundingModeP3109, X::Float64, R::Int, sticky::Int)
+function round_to_precision(P::Int, B::Int, μ::RoundingMode3109, X::Float64, R::Int, sticky::Int)
     (isnan(X) | isinf(X) | iszero(X)) && return _rtp_core(P, B, μ, X, R, sticky)
     ((reinterpret(UInt64, X) >> 52) & 0x7ff) == 0x000 && return _rtp_core(P, B, μ, X, R, sticky)
     _rtp_f64(P, B, μ, X, R, sticky)
@@ -73,7 +73,7 @@ end
 @inline _rab(::StochasticC{N}, ν, lost, νs, Sfl, Q, B, P, sign, R) where {N} =
     _brnite(ν, lost, νs, N) + R >= Int64(1) << N
 
-function _rtp_f64(P::Int, B::Int, μ::RoundingModeP3109, X::Float64, R::Int, sticky::Int)
+function _rtp_f64(P::Int, B::Int, μ::RoundingMode3109, X::Float64, R::Int, sticky::Int)
     sign = Int8(X > 0.0 ? 1 : -1)
     u = reinterpret(UInt64, abs(X))
     e = Int(u >> 52) - 1023                                  # normal input guaranteed
@@ -126,15 +126,15 @@ end
 # argument transfers verbatim (S̃ < 2^P after exact scaling). ν granularity on a
 # Float128 carrier is ≥ 2^(P−113), so every stochastic grid up to N = 60 stays
 # aligned — no mode restriction. No precision ceremony needed.
-round_to_precision(P::Int, B::Int, μ::RoundingModeP3109, X::Float128, R::Int, sticky::Int) =
+round_to_precision(P::Int, B::Int, μ::RoundingMode3109, X::Float128, R::Int, sticky::Int) =
     _rtp_core(P, B, μ, X, R, sticky)
 # BigFloat carriers may exceed the ambient MPFR default precision; ldexp/floor/ν
 # arithmetic must run at (at least) the operand's precision or bits are silently
 # truncated. Function barrier sets it for the whole finite path.
-round_to_precision(P::Int, B::Int, μ::RoundingModeP3109, X::BigFloat, R::Int, sticky::Int) =
+round_to_precision(P::Int, B::Int, μ::RoundingMode3109, X::BigFloat, R::Int, sticky::Int) =
     setprecision(() -> _rtp_core(P, B, μ, X, R, sticky), BigFloat, Base.precision(X) + 8)
 
-function _rtp_core(P::Int, B::Int, μ::RoundingModeP3109, X, R::Int, sticky::Int)
+function _rtp_core(P::Int, B::Int, μ::RoundingMode3109, X, R::Int, sticky::Int)
     if isnan(X)
         return Rounded(KIND_NAN, Int8(1), 0, 0)
     elseif isinf(X)

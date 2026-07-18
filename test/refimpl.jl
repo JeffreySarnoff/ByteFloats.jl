@@ -48,13 +48,13 @@ function refround(P::Int, B::Int, mode, R::Int, X::RQ; approx::Bool=false)
     elseif mode isa ToOdd
         ν > 0 && codeiseven
     elseif mode isa StochasticA
-        N = P3109.nrandbits(mode)
+        N = ByteFloats.nrandbits(mode)
         floor(BigInt, ν * big(2)^N) + R >= big(2)^N
     elseif mode isa StochasticB
-        N = P3109.nrandbits(mode)
+        N = ByteFloats.nrandbits(mode)
         floor(BigInt, ν * big(2)^(N + 1)) + (2R + 1) >= big(2)^(N + 1)
     elseif mode isa StochasticC
-        N = P3109.nrandbits(mode)
+        N = ByteFloats.nrandbits(mode)
         t = ν * big(2)^N; ft = floor(BigInt, t); fr = t - ft
         rnite = (fr < RQ(1, 2) || (fr == RQ(1, 2) && iseven(ft))) ? ft : ft + 1
         rnite + R >= big(2)^N
@@ -68,9 +68,9 @@ end
 datum_rq(v) = RQ(decode(v))   # decode is exact in Float64 (asserted elsewhere)
 
 function refproject(::Type{T}, ρ::ProjSpec, X::Union{RQ,Float64}; R::Int=0, approx::Bool=false) where {T<:Binary}
-    mode = P3109.roundingmode(ρ); sat = P3109.saturationmode(ρ)
-    K = bitwidth(T); P = precision(T); B = P3109.expbias(T)
-    SGN = P3109.issigned(T); EXT = P3109.isextended(T)
+    mode = ByteFloats.roundingmode(ρ); sat = ByteFloats.saturationmode(ρ)
+    K = bitwidth(T); P = precision(T); B = ByteFloats.expbias(T)
+    SGN = ByteFloats.issigned(T); EXT = ByteFloats.isextended(T)
     nanc = nan_code(T)
     X isa Float64 && isnan(X) && return nanc
     if X isa Float64 && isinf(X)

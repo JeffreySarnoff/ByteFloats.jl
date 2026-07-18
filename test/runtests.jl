@@ -17,7 +17,7 @@
 #
 # Assembled from the harnesses that each passed against the shipped sources
 # (assertion counts in checkpoint.md); assembled file not re-executed at
-# consolidation time per instruction — run with `Pkg.test("P3109")`.
+# consolidation time per instruction — run with `Pkg.test("ByteFloats")`.
 
 using Test
 using Random
@@ -617,7 +617,7 @@ function ref_lane(S::Float64, x::Float64)
     (isnan(S) || isnan(x)) && return NaN
     ((iszero(S) && isinf(x)) || (isinf(S) && iszero(x))) && return NaN
     p = S * x
-    iszero(p) ? 0.0 : p              # P3109 single zero: reference must normalize −0.0 too
+    iszero(p) ? 0.0 : p              # ByteFloats single zero: reference must normalize −0.0 too
 end
 
 T5 = Binary5p2se; T8 = Binary8p3se; U1 = Binary8p1uf
@@ -987,12 +987,12 @@ modes_bo = [NearestTiesToEven(), NearestTiesToAway(), TowardPositive(), TowardNe
         @test isequal(_decode_table(T)[Int(c) + 1], _decode_compute(v))
     end
     # constant folding preserved (Group M identities still exact)
-    @test P3109.maxfinite_datum(Binary8p4se) == 224.0   # 1.75·2^7 (B = 8, Eb = 15)
+    @test ByteFloats.maxfinite_datum(Binary8p4se) == 224.0   # 1.75·2^7 (B = 8, Eb = 15)
 
     # ---- K4: _extremal_SQ ≡ Base.decompose of the extremal datum, all formats
     for T in allfmts
         S, Q = _extremal_SQ(T)
-        (mS, mE, _) = Base.decompose(P3109.maxfinite_datum(T))
+        (mS, mE, _) = Base.decompose(ByteFloats.maxfinite_datum(T))
         # normalize decompose's trailing zeros into the comparison
         @test S * big(2.0)^Q == mS * big(2.0)^mE
     end
@@ -1005,7 +1005,7 @@ modes_bo = [NearestTiesToEven(), NearestTiesToAway(), TowardPositive(), TowardNe
     end
     Random.seed!(11)
     for T in (Binary8p4se, Binary8p1uf, Binary5p2se, Binary3p1se, Binary8p8uf)
-        P = precision(T); B = P3109.expbias(T)
+        P = precision(T); B = ByteFloats.expbias(T)
         dats = [decode(rawvalue(T, UInt8(c))) for c in 0:(1 << bitwidth(T)) - 1]
         fin = filter(x -> isfinite(x) && !iszero(x), dats)
         # datums, pairwise sums/products (the reachable arithmetic values), sticky variants
@@ -1087,8 +1087,8 @@ modes_bo = [NearestTiesToEven(), NearestTiesToAway(), TowardPositive(), TowardNe
         A = [rawvalue(T, UInt8(rand(0:(1 << bitwidth(T)) - 1))) for _ in 1:1000]
         pv = PackedVector(A)
         @test sizeof(pv.data) <= cld(1000 * bitwidth(T), 64) * 8 + 8
-        o1 = P3109.vmap(:Exp, T, RNE_SatNone, pv)       # kernel-through-packed ≡ bytes
-        o2 = P3109.vmap(:Exp, T, RNE_SatNone, A)
+        o1 = ByteFloats.vmap(:Exp, T, RNE_SatNone, pv)       # kernel-through-packed ≡ bytes
+        o2 = ByteFloats.vmap(:Exp, T, RNE_SatNone, A)
         @test codepoint.(o1) == codepoint.(o2)
     end
 end
@@ -1135,7 +1135,7 @@ end
     @test a == b && a === b
     # exhaustive: T(c) ≡ rawvalue(T, c) over every format and every valid code
     for nm in keys(_NAMED)
-        T = getfield(P3109, nm)
+        T = getfield(ByteFloats, nm)
         for c in 0x00:UInt8((1 << bitwidth(T)) - 1)
             @test T(c) === rawvalue(T, c)
         end
@@ -1154,7 +1154,7 @@ end
     # Rational disambiguation policy
     @test_throws ArgumentError Binary8p4se(1//2)
     # method-table hygiene and specialization
-    @test isempty(Test.detect_ambiguities(P3109))
+    @test isempty(Test.detect_ambiguities(ByteFloats))
     mk(c) = Binary5p3sf(c); mk(0x08)
     @test @allocated(mk(0x08)) == 0
     @test Base.return_types(mk, Tuple{UInt8}) == [Binary5p3sf]

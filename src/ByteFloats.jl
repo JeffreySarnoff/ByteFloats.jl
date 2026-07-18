@@ -64,7 +64,7 @@ export bitwidth, issigned, isextended, expbias, expbitwidth, trailingsigbits,
        maxfinite_datum, minfinite_datum, formatname, rawvalue, decode   # codepoint extends Base
 
 # projection specifications
-export RoundingModeP3109, NearestTiesToEven, NearestTiesToAway, TowardPositive,
+export RoundingMode3109, NearestTiesToEven, NearestTiesToAway, TowardPositive,
        TowardNegative, TowardZero, ToOdd, StochasticA, StochasticB, StochasticC,
        SaturationMode, SatFinite, SatPropagate, SatNone,
        ProjSpec, RoundOf, SatOf, roundingmode, saturationmode,

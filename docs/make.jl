@@ -8,7 +8,7 @@ using ByteFloats
 
 makedocs(;
     sitename = "ByteFloats.jl",
-    modules = [P3109],
+    modules = [ByteFloats],
     authors = "ByteFloats.jl contributors",
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", nothing) == "true",
