@@ -1,0 +1,8 @@
+# Normalize line endings: sources are stored LF in the repository and checked
+# out LF everywhere — important on Windows working copies (this repo lives at
+# a Windows path) so Julia files, docs, and diffs stay byte-stable across OSes.
+* text=auto
+*.jl   text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
