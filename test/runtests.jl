@@ -941,13 +941,17 @@ println("approx.jl verified")
     @test ωeval(Val(:FAA), 2.0^98, 1.0, 1.0) isa Float128
     @test ωeval(Val(:FAA), 2.0^99, 1.0, 1.0) isa BigExactF
 
-    # --- CR bracket soundness: Enclose128F strictly brackets the MPFR truth
+    # --- CR enclosure soundness: inexact Divide now returns the Float64-CR fast
+    #     enclosure — the eager estimate is the IEEE correctly-rounded quotient
+    #     (within half an ulp of truth) and the MPFR ladder strictly brackets it
     for (x, y) in ((1.0, 3.0), (2.0^60, 3.0), (7.0, -11.0), (1.0, 2.0^-60 * 3))
         r = ωeval(Val(:Divide), x, y)
-        @test r isa Enclose128F
+        @test r isa EncloseF
         t = setprecision(() -> BigFloat(x) / BigFloat(y), BigFloat, 500)
-        @test BigFloat(r.lo) < t < BigFloat(r.hi)
-        @test nextfloat(r.lo) == prevfloat(r.hi)              # exactly the CR neighbors
+        @test r.yd == x / y                                   # the IEEE-CR quotient
+        @test abs(t - BigFloat(r.yd)) <= 0.5 * eps(abs(r.yd)) # CR ⇒ ≤ half an ulp
+        lo, hi = r.f(256)
+        @test lo < t < hi                                     # ladder strictly brackets
     end
     s = ωeval(Val(:Sqrt), 2.0)
     @test s isa Enclose128F && BigFloat(s.lo) < sqrt(BigFloat(2)) < BigFloat(s.hi)

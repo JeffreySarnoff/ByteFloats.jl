@@ -94,7 +94,7 @@ function bench_primitives(::Type{T}) where {T<:Binary}
     rows
 end
 
-# `getfield(ByteFloats, op)` infers `::Any`; captured directly it would make every
+# `getfield(P3109, op)` infers `::Any`; captured directly it would make every
 # benchmarked call a dynamic dispatch (exactly the harness failure the doctrine
 # exists to prevent — caught in review when the same op measured 10× slower here
 # than in the sensitivity table). Passing `f` through an argument specializes on
@@ -110,7 +110,7 @@ function bench_scalar_ops(::Type{T}, names, arity) where {T<:Binary}
     pool = codes_pool(T, 4096)
     rows = Row[]
     for op in names
-        b = _bench_op(getfield(ByteFloats, op), T, pool, Val(arity))
+        b = _bench_op(getfield(P3109, op), T, pool, Val(arity))
         push!(rows, Row(string(op), b))
     end
     sort!(rows; by=r -> r.med)
@@ -120,8 +120,8 @@ function bench_format_sensitivity(ops)
     rows = Row[]
     for F in (Binary8p4se, Binary8p3sf, Binary8p1uf, Binary5p2se, Binary3p1se), op in ops
         pool = codes_pool(F, 4096)
-        b = _bench_op(getfield(ByteFloats, op), F, pool, Val(2))
-        push!(rows, Row("$(op)⟨$(ByteFloats.formatname(F))⟩", b))
+        b = _bench_op(getfield(P3109, op), F, pool, Val(2))
+        push!(rows, Row("$(op)⟨$(P3109.formatname(F))⟩", b))
     end
     rows
 end
@@ -162,7 +162,7 @@ function bench_kernels(::Type{T}; n=65536) where {T<:Binary}
     b = @be (similar(A), Xoshiro(1)) (t -> vmap!(t[1], Val(:Add), T, σ, A, B, t[2]))(_) evals=1
     push!(rows, Row("vmap binary stochastic (scalar loop), n=$n", b; extra=perel(b, n)))
     pv = PackedVector(A)
-    b = @be ByteFloats.vmap(:Exp, T, RNE_SatNone, pv) evals=1
+    b = @be P3109.vmap(:Exp, T, RNE_SatNone, pv) evals=1
     push!(rows, Row("vmap unary through PackedVector, n=$n", b; extra=perel(b, n)))
     rows
 end
@@ -190,7 +190,10 @@ function bench_table_builds()
     for (nm, f) in specs
         f()                                           # JIT warm; builds are cache-evicted per sample
         b = @be empty_tables!() (_ -> f())(_) evals=1 seconds=3
-        push!(rows, Row(nm, b))
+        f()                                           # repopulate so the warm row measures a cache hit
+        w = @be f() seconds=1
+        push!(rows, Row(nm, b;
+              extra=string(fmt_time(median(w).time), " / ", fmt_time(minimum(w).time))))
     end
     empty_tables!()
     rows
@@ -286,8 +289,10 @@ function generate_report(path::AbstractString="benchmark_report.md"; seed=2026)
             "Counting sort is installed as the default algorithm for `Binary` vectors.",
             bench_sorting(T))
         write_table(io, "Table builds (oracle + projection, Float128-first)",
-            "Cold cache per sample (`empty_tables!` in untimed setup); JIT pre-warmed.",
-            bench_table_builds())
+            "Cold cache per sample (`empty_tables!` in untimed setup); JIT pre-warmed. " *
+            "The warm-hit column is the steady-state cost of `get_table` when the " *
+            "specialization is already cached (median / min).",
+            bench_table_builds(); extra_header="warm hit")
         write_table(io, "Block and scaled operations",
             "Elements `Binary8p4se`, scales `Binary8p1uf`, B = 32.",
             bench_blocks(Binary8p4se, Binary8p1uf); extra_header="per lane")

@@ -63,8 +63,8 @@ _mpfr2(f::F, x::Float64, y::Float64) where {F} = prec -> setprecision(BigFloat, 
      setrounding(() -> f(BigFloat(x), BigFloat(y)), BigFloat, RoundUp))
 end
 # enclosure builders: MPFR ladder + optional Float128 pre-filter estimator
-_encl1(f::F, x::Float64; fq=nothing) where {F} = EncloseF(_mpfr1(f, x), fq)
-_encl2(f::F, x::Float64, y::Float64; fq=nothing) where {F} = EncloseF(_mpfr2(f, x, y), fq)
+_encl1(f::F, x::Float64; fq=nothing, yd=NaN) where {F} = EncloseF(_mpfr1(f, x), fq, yd)
+_encl2(f::F, x::Float64, y::Float64; fq=nothing, yd=NaN) where {F} = EncloseF(_mpfr2(f, x, y), fq, yd)
 
 # Quadmath omits acos(::Float128); π/2 − asin is exact well within the 2^-90 envelope
 # (asin faithful + π half-ulp + one subtraction: ≲ 2^-108 relative).
@@ -253,13 +253,12 @@ function ωeval(::Val{:Divide}, x::Float64, y::Float64)
     isinf(x) && return y > 0 ? x : -x
     q = x / y
     (isfinite(q) && fma(q, y, -x) == 0.0) && return (iszero(q) ? 0.0 : q)   # exact quotient
-    if _f128()
-        qx, qy = Float128(x), Float128(y)
-        q128 = qx / qy
-        fma(q128, qy, -qx) == 0 && return q128               # exact at 113 bits
-        return Enclose128F(prevfloat(q128), nextfloat(q128), _mpfr2(/, x, y))
-    end
-    _encl2(/, x, y)
+    # IEEE-CR Float64 quotient as eager estimate; degenerate q ⇒ yd = NaN ⇒ the
+    # Float128 filter / ladder decide. Single call site keeps the union narrow;
+    # the former 113-bit-exact branch is dead (a dyadic x/y is exact at ≤ p_x ≤ 53
+    # bits whenever it is finite and representable).
+    yd = (isfinite(q) && !iszero(q)) ? q : NaN
+    _encl2(/, x, y; fq=() -> Float128(x) / Float128(y), yd)
 end
 function ωeval(::Val{:Recip}, x::Float64)
     isnan(x) && return NaN
@@ -267,13 +266,13 @@ function ωeval(::Val{:Recip}, x::Float64)
     isinf(x) && return 0.0                                   # Recip(±∞) → 0 (A.3)
     q = 1.0 / x
     (isfinite(q) && fma(q, x, -1.0) == 0.0) && return q      # exact ⇔ x a power of two
-    if _f128()
-        qx = Float128(x)
-        q128 = inv(qx)
-        fma(q128, qx, Float128(-1)) == 0 && return q128
-        return Enclose128F(prevfloat(q128), nextfloat(q128), _mpfr1(inv, x))
-    end
-    _encl1(inv, x)
+    # IEEE-CR Float64 quotient (≤ half an ulp) is the ideal eager estimate; a
+    # degenerate q (over/underflow) sends yd = NaN so _finish skips straight to
+    # the Float128 filter / MPFR ladder. Single call site keeps the return union
+    # to {Float64, EncloseF} — the former Float128/Enclose128F branch is dead for
+    # Float64 inputs (1/x exact at 113 bits ⇔ x a power of two ⇔ exact at 53).
+    yd = (isfinite(q) && !iszero(q)) ? q : NaN
+    _encl1(inv, x; fq=() -> inv(Float128(x)), yd)
 end
 function ωeval(::Val{:Sqrt}, x::Float64)
     isnan(x) && return NaN
@@ -334,17 +333,15 @@ end
 # ============================================================================
 function ωeval(::Val{:Exp}, x::Float64)
     isnan(x) && return NaN
-    x == -Inf && return 0.0
-    x == Inf && return Inf
+    isinf(x) && return x > 0.0 ? Inf : 0.0
     iszero(x) && return 1.0
-    _encl1(exp, x; fq=() -> exp(Float128(x)))
+    _encl1(exp, x; fq=() -> exp(Float128(x)), yd=exp(x))
 end
 function ωeval(::Val{:Exp2}, x::Float64)
     isnan(x) && return NaN
-    x == -Inf && return 0.0
-    x == Inf && return Inf
+    isinf(x) && return x > 0.0 ? Inf : 0.0
     iszero(x) && return 1.0
-    _encl1(exp2, x; fq=() -> exp2(Float128(x)))
+    _encl1(exp2, x; fq=() -> exp2(Float128(x)), yd=exp2(x))
 end
 function ωeval(::Val{:ExpMinusOne}, x::Float64)
     isnan(x) && return NaN
@@ -360,7 +357,7 @@ function ωeval(::Val{:Log}, x::Float64)          # draft §4.11 Log rows
     x < 0.0 && return NaN
     iszero(x) && return -Inf
     x == 1.0 && return 0.0
-    _encl1(log, x; fq=() -> log(Float128(x)))
+    _encl1(log, x; fq=() -> log(Float128(x)), yd=log(x))
 end
 function ωeval(::Val{:Log2}, x::Float64)
     isnan(x) && return NaN
@@ -373,7 +370,7 @@ function ωeval(::Val{:Log2}, x::Float64)
     # screen here is cheaper and exact (Class R).
     xe = exponent(x)
     x == ldexp(1.0, xe) && return Float64(xe)
-    _encl1(log2, x; fq=() -> log2(Float128(x)))
+    _encl1(log2, x; fq=() -> log2(Float128(x)), yd=log2(x))
 end
 function ωeval(::Val{:LogOnePlus}, x::Float64)
     isnan(x) && return NaN
@@ -381,7 +378,7 @@ function ωeval(::Val{:LogOnePlus}, x::Float64)
     x == -1.0 && return -Inf
     x == Inf && return Inf
     iszero(x) && return 0.0
-    _encl1(log1p, x; fq=() -> log1p(Float128(x)))
+    _encl1(log1p, x; fq=() -> log1p(Float128(x)), yd=log1p(x))
 end
 function ωeval(::Val{:Softplus}, x::Float64)
     isnan(x) && return NaN
@@ -389,13 +386,14 @@ function ωeval(::Val{:Softplus}, x::Float64)
     x == Inf && return Inf
     fq = x > 0.0 ? (() -> (q = Float128(x); q + log1p(exp(-q)))) :
                    (() -> log1p(exp(Float128(x))))
+    yd = x > 0.0 ? x + log1p(exp(-x)) : log1p(exp(x))
     EncloseF(prec -> setprecision(BigFloat, prec) do
         # monotone-↑ composition: whole-expression directed rounding is an enclosure;
         # the x > 0 form keeps it tight (and exact-side correct) for large x
         f = x > 0.0 ? (b -> b + log1p(exp(-b))) : (b -> log1p(exp(b)))
         (setrounding(() -> f(BigFloat(x)), BigFloat, RoundDown),
          setrounding(() -> f(BigFloat(x)), BigFloat, RoundUp))
-    end, fq)
+    end, fq, yd)
 end
 
 # ============================================================================
@@ -410,7 +408,7 @@ for (name, bf) in ((:Sin, :sin), (:Cos, :cos), (:Tan, :tan))
         # huge-argument reduction accuracy in libquadmath is undocumented; keep the
         # pre-filter inside a conservative window and let MPFR own the rest (§9.2:
         # "undocumented envelope ⇒ fall back")
-        abs(x) <= 1.0e15 ? _encl1($bf, x; fq=() -> $bf(Float128(x))) : _encl1($bf, x)
+        abs(x) <= 1.0e15 ? _encl1($bf, x; fq=() -> $bf(Float128(x)), yd=$bf(x)) : _encl1($bf, x)
     end
 end
 function ωeval(::Val{:ArcSin}, x::Float64)
@@ -434,7 +432,7 @@ function ωeval(::Val{:ArcTan}, x::Float64)
     x == Inf && return _encl_piscale(1, 1)
     x == -Inf && return _encl_piscale(-1, 1)
     iszero(x) && return 0.0
-    _encl1(atan, x; fq=() -> atan(Float128(x)))
+    _encl1(atan, x; fq=() -> atan(Float128(x)), yd=atan(x))
 end
 for (name, bf, inf2) in ((:Sinh, :sinh, :same), (:Cosh, :cosh, :pos), (:Tanh, :tanh, :one))
     @eval function ωeval(::Val{$(QuoteNode(name))}, x::Float64)
@@ -445,14 +443,14 @@ for (name, bf, inf2) in ((:Sinh, :sinh, :same), (:Cosh, :cosh, :pos), (:Tanh, :t
                                :(return x > 0 ? 1.0 : -1.0))
         end
         iszero(x) && return $(name === :Cosh ? 1.0 : 0.0)
-        _encl1($bf, x; fq=() -> $bf(Float128(x)))
+        _encl1($bf, x; fq=() -> $bf(Float128(x)), yd=$bf(x))
     end
 end
 function ωeval(::Val{:ArcSinh}, x::Float64)
     isnan(x) && return NaN
     isinf(x) && return x
     iszero(x) && return 0.0
-    _encl1(asinh, x; fq=() -> asinh(Float128(x)))
+    _encl1(asinh, x; fq=() -> asinh(Float128(x)), yd=asinh(x))
 end
 function ωeval(::Val{:ArcCosh}, x::Float64)
     isnan(x) && return NaN

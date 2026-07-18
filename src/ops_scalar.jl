@@ -35,8 +35,10 @@ differential-build tests. Filter disagreement always falls through to `f`.
 struct EncloseF{F,G}
     f::F
     fq::G
+    yd::Float64   # eager Float64 estimate (NaN ⇒ none); envelope |yd|·2^-45 per _F64_RELEXP
 end
-EncloseF(f) = EncloseF(f, nothing)
+EncloseF(f) = EncloseF(f, nothing, NaN)
+EncloseF(f, fq) = EncloseF(f, fq, NaN)
 """
 Correctly-rounded Float128 bracket (plan Site C, Class R): IEEE mandates correct
 rounding for Float128 `/`, `sqrt`, `fma`, so a nearest-CR result of a value known
@@ -51,6 +53,13 @@ struct Enclose128F{F}
 end
 
 const _F128_RELEXP = -90        # envelope exponent: E = |y|·2^-90
+const _F64_RELEXP  = -45        # Float64 pre-filter envelope: E = |y|·2^-45
+# The Float64 stage is sound for ops whose Float64 libm evaluation is faithful
+# (error ≤ 1 ulp ≈ 2^-52 relative on normal results): 2^-45 gives ≥ 2^7 slack.
+# Estimates that are non-finite, zero, or too near the subnormal range (where
+# the relative-error model breaks) skip the stage; disagreement at the sticky
+# gate falls through to the Float128 filter and the rigorous ladder unchanged.
+const _F64_MINNORMISH = 6.7e-290   # ≈ 2^-960: comfortably clear of subnormals
 
 @inline _finish(::Type{fr}, ρ::ProjSpec, R::Int, v::Float64) where {fr<:Binary} =
     project(fr, ρ, v; R)
@@ -59,6 +68,13 @@ const _F128_RELEXP = -90        # envelope exponent: E = |y|·2^-90
 @inline _finish(::Type{fr}, ρ::ProjSpec, R::Int, b::BigExactF) where {fr<:Binary} =
     project(fr, ρ, b.f(); R)
 function _finish(::Type{fr}, ρ::ProjSpec, R::Int, e::EncloseF) where {fr<:Binary}
+    yd = e.yd
+    if yd == yd && isfinite(yd) && abs(yd) >= _F64_MINNORMISH   # yd==yd: not NaN
+        Ed = ldexp(abs(yd), _F64_RELEXP)
+        dd = project(fr, ρ, yd - Ed; R, sticky=+1)
+        du = project(fr, ρ, yd + Ed; R, sticky=-1)
+        codepoint(dd) == codepoint(du) && return dd
+    end
     if e.fq !== nothing && _f128()
         y = e.fq()::Float128
         if isfinite(y) && !iszero(y)
