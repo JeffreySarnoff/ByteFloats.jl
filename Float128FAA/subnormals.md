@@ -1,10 +1,10 @@
-Does Float128FMA work correctly with all subnormal values?
-Does Float128FMA work correctly with a two subnormal multiplicands and a normal addend?
-Does Float128FMA work correctly with a two normal multiplicands and a subnormal addend?
+Does fma128 work correctly with all subnormal values?
+Does fma128 work correctly with a two subnormal multiplicands and a normal addend?
+Does fma128 work correctly with a two normal multiplicands and a subnormal addend?
 
 Short answer from the design: yes to all three — decompose normalizes subnormal inputs into (significand, extended exponent) pairs (down to e = −16494), the 256-bit accumulator has no exponent floor, and results re-enter the subnormal grid through the pre-round jam-shift, so subnormals are handled uniformly rather than as special cases. The suite already exercised this (the subnormal-heavy battery and the underflow-threshold sweep), but your three questions deserve targeted, high-volume verification against native fmaq. Let me run exactly those three populations, plus the adversarial sub-cases within each (cancellation into the subnormal range, results at the subnormal/normal boundary, total underflow sign handling):
 
-Validated Float128FMA's subnormal handling through decomposition and empirical testing.
+Validated fma128's subnormal handling through decomposition and empirical testing.
 
 Yes to all three — each verified just now with ~6.8 million freshly targeted cases, every one bit-identical to native fmaq, on top of the original suite's subnormal batteries. Here's why each works mechanically:
 
