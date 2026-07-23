@@ -20,11 +20,13 @@ not optional.
    rows explicitly in `ωeval`, in draft style, before any general evaluation.
    Mark any behavior the draft text under-determines with `[interp]`.
 2. **Result-kind protocol.** `ωeval` must return one of
-   `Float64 | Float128 | BigExactF | EncloseF | Enclose128F`, with `Float64`/
-   `Float128` reserved for *provably exact* results. Keep the return union
-   narrow (ideally `{Float64, EncloseF}`) — a wide union defeats inference and
-   costs allocations (measured: a 4-type union turned a 50 ns op into 240 ns
-   with 2 allocations).
+   `Float64 | Float128 | StickyF | BigExactF | EncloseF | Enclose128F`, with
+   `Float64`/`Float128` reserved for *provably exact* results and `StickyF`
+   for exact-head-plus-tail-direction results whose soundness bound is
+   discharged at the emitting site (see the `FMA`/`FAA` wide-spread
+   escalations). Keep the return union narrow (ideally `{Float64, EncloseF}`)
+   — a wide union defeats inference and costs allocations (measured: a 4-type
+   union turned a 50 ns op into 240 ns with 2 allocations).
 3. **Termination (the Niven duty).** `project_interval` terminates only if the
    enclosure is not chasing a value the projection grid can actually hit. Any
    input whose *exact* result is a representable dyadic must be **peeled or
@@ -67,8 +69,9 @@ The registry lives in `src/ops_scalar.jl`. Adding a name to `_UNARY_OPS` /
   override with an explicit `register_op!` if the default group is wrong);
 - the generated spec-register method `Op(fr, ρ, operands…; rng, R)` and the
   same-format convenience `Op(x…)`;
-- generated array methods routing through `vmap` (Shape-A tables for pure ρ at
-  arity ≤ 2, Shape-B scalar loops otherwise);
+- generated array methods routing through `vmap` (Shape-A tables for pure ρ —
+  always at arity ≤ 2, bitwidth-gated at arity 3 — Shape-B scalar/threaded loops
+  otherwise);
 - generated `BlockOp` and `ScaledOp` variants (`src/blocks.jl`);
 - the export (`src/ByteFloats.jl` loops the registry);
 - table cacheability, conformance listing, and test-harness coverage.
@@ -174,9 +177,11 @@ the cheapest correct implementation is *delegation*, and delegation is a
 first-class technique here.
 
 **Step 1 — registry**: append `:FMS` to `_TERNARY_OPS` (group `:A` by the
-loop). Ternary ops never tabulate (2^{3K} entries); the generated array method
-runs the Shape-B scalar loop, and stochastic ρ draws per element — all
-automatic.
+loop). The generated array method routes through the same ternary bitwidth
+policy every other ternary op uses (`tables.jl`'s `_ternary_table_for`): small
+operand formats table (eagerly or adaptively), `K = 8` runs the — optionally
+threaded — Shape-B scalar loop, and stochastic ρ always draws per element. No
+op-specific work needed; the policy keys on formats and ρ, not on which op it is.
 
 **Step 2 — ω-semantics** by delegation to `FMA`'s already-verified analysis
 (width thresholds, `_twosum` exactness, wide-spread fallback):
@@ -224,9 +229,15 @@ two-term dot product.
    ```
 
    (`apply_op` and `ωeval` are already variadic — no change needed there.)
-2. `src/kernels.jl` — a four-array Shape-B `vmap!` method (copy the ternary
-   one, add operand `D`), and an arity-4 branch in the registry-generated
-   array-surface loop.
+2. `src/kernels.jl` — a four-array `vmap!` method. The plain Shape-B loop (copy
+   the *body* of the ternary method's compute branch, add operand `D`) is
+   enough to get correct results; the ternary method's table-tiering and
+   threading are a bitwidth-driven optimization layered on top (`tables.jl`'s
+   `_ternary_table_for` and its LRU cache), not required plumbing — extend to
+   arity 4 only if a table win at that arity is worth the 2^(4K) growth.
+   Also add an arity-4 branch in the registry-generated array-surface loop and
+   the matching rng-threading overload (mirroring the three-array one) so
+   stochastic ρ dispatches correctly.
 3. `src/blocks.jl` — either an arity-4 branch in the Block/Scaled generation
    loop (four operand blocks, four `blockdecode`s) or an explicit skip
    (`op.arity > 3 && continue`) if a block form is not wanted; be deliberate.

@@ -49,6 +49,62 @@ const _DE_FAA = 98     # three 8-bit terms: 11 + span ≤ 113, margin 4
     hi - lo
 end
 
+# Float128 twin of _twosum (IEEE-CR Float128 add/sub, so the Knuth transform is exact)
+@inline function _twosum128(a::Float128, b::Float128)
+    s = a + b
+    bb = s - a
+    (s, (a - (s - bb)) + (b - bb))
+end
+
+# ---- wide-spread sticky escalations (non-allocating replacements for the
+# BigFloat tail; see StickyF's soundness note in ops_scalar.jl).
+#
+# FMA, ΔE(p, z) > _DE_FMA = 92: the exact 17-bit product p and the ≤8-bit addend z
+# are bit-disjoint by > 75 binades, so the larger term is the head and the smaller
+# contributes only its sign. Threshold-grid bound (head h, tail w): h is a multiple
+# of 2^(e_h−16) while |w| < |h|·2^-92, far below both the finest stochastic
+# sub-grid unit (≥ 2^(e_h−7−61)) and h's distance to any off-grid threshold
+# (≥ 2^(e_h−16)).
+@inline function _fma_wide(p::Float64, z::Float64)
+    abs(p) >= abs(z) ? StickyF(p, signbit(z) ? -1 : 1) :
+                       StickyF(z, signbit(p) ? -1 : 1)
+end
+
+# FAA, span > _DE_FAA = 98 (cancellation among x, y, z possible): distill the three
+# exact Float128 terms into (v1, v2, v3) with v1+v2+v3 invariant (each 2sum pass is
+# an exact transform) until v1 = fl128(Σ) up to its own lsb and the residual
+# v2 + v3 has a determinable sign strictly below lsb(v1) = 2^(e₁−112):
+#   · 2sum guarantees |v2| ≤ ulp(v1)/2 = 2^(e₁−113);
+#   · accepting requires |v3| < |v2| (sign = sign(v2), |v2+v3| < 2^(e₁−112))
+#     or v3 = 0 (sign = sign(v2)) or v2 = 0 with |v3| < 2^(e₁−112) (sign = sign(v3)).
+# Priest-style distillation on 3 sorted terms converges in ≤ 3 sweeps; 6 is margin,
+# with the (unreachable in testing) MPFR fallback preserving semantics regardless.
+function _faa_wide(x::Float64, y::Float64, z::Float64)
+    v1, v2, v3 = Float128(x), Float128(y), Float128(z)
+    for _ in 1:6
+        # sort descending by magnitude (convergence, not exactness, needs this)
+        if abs(v2) < abs(v3); v2, v3 = v3, v2; end
+        if abs(v1) < abs(v2); v1, v2 = v2, v1; end
+        if abs(v2) < abs(v3); v2, v3 = v3, v2; end
+        t, tt = _twosum128(v2, v3)
+        s, e  = _twosum128(v1, t)
+        v1, v2, v3 = s, e, tt
+        if iszero(v2) && iszero(v3)
+            return v1                                        # exact (covers Σ = 0)
+        end
+        iszero(v1) && continue                               # total hiding in v2+v3; resort
+        if iszero(v3)
+            return StickyF(v1, signbit(v2) ? -1 : 1)
+        elseif iszero(v2)
+            abs(v3) < ldexp(one(Float128), Base.exponent(v1) - 112) &&
+                return StickyF(v1, signbit(v3) ? -1 : 1)
+        elseif abs(v3) < abs(v2)
+            return StickyF(v1, signbit(v2) ? -1 : 1)
+        end
+    end
+    _bigsum3(x, y, z)
+end
+
 _bigsum2(x::Float64, y::Float64) =
     BigExactF(() -> setprecision(() -> BigFloat(x) + BigFloat(y), BigFloat, _BIGP))
 _bigfma(x::Float64, y::Float64, z::Float64) =
@@ -235,8 +291,10 @@ function ωeval(::Val{:FMA}, x::Float64, y::Float64, z::Float64)
     end
     s, e = _twosum(p, z)
     e == 0.0 && return iszero(s) ? 0.0 : s
-    (_f128() && !iszero(p) && !iszero(z) && _expdiff(p, z) <= _DE_FMA) &&
+    if _f128()                                               # e ≠ 0 ⇒ p, z both nonzero
+        _expdiff(p, z) > _DE_FMA && return _fma_wide(p, z)   # sticky head, no allocation
         return Float128(p) + Float128(z)                     # p exact ⇒ sum exact by width
+    end
     _bigfma(x, y, z)
 end
 function ωeval(::Val{:FAA}, x::Float64, y::Float64, z::Float64)
@@ -250,8 +308,11 @@ function ωeval(::Val{:FAA}, x::Float64, y::Float64, z::Float64)
     s1, e1 = _twosum(x, y)
     s2, e2 = _twosum(s1, z)
     (e1 == 0.0 && e2 == 0.0) && return iszero(s2) ? 0.0 : s2
-    (_f128() && _span3(x, y, z) <= _DE_FAA) &&
-        return (Float128(x) + Float128(y)) + Float128(z)     # every partial exact by width
+    if _f128()
+        _span3(x, y, z) <= _DE_FAA &&
+            return (Float128(x) + Float128(y)) + Float128(z) # every partial exact by width
+        return _faa_wide(x, y, z)                            # sticky head, no allocation
+    end
     _bigsum3(x, y, z)
 end
 

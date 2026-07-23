@@ -28,6 +28,20 @@ struct BigExactF{F}
     f::F
 end
 """
+Sticky-head exact result (wide-spread tail, Float128 revision follow-on): the true
+value is `v + sgn·ε` for an infinitesimal `ε > 0` — `v` carries every bit the
+projection can consume and `sgn ∈ {-1,+1}` the direction of the neglected tail.
+Sound because `v` is either exactly on a rounding threshold of the target grid
+(where `sticky` decides, for every mode including stochastic sub-grids) or
+strictly farther from the nearest threshold than the tail magnitude; the emitting
+sites in oracle.jl discharge that bound (operand significands ≤ 17 bits, target
+grids ≤ P−1+N ≤ 67 fractional bits, spreads > the _DE_* thresholds). Non-allocating:
+replaces the BigFloat escalation for FMA/FAA."""
+struct StickyF{T<:Union{Float64,Float128}}
+    v::T
+    sgn::Int
+end
+"""
 Deferred enclosure, resolved by `_finish` through up to three stages, cheapest first:
 
 1. `yd` — an *eager* Float64 estimate (NaN ⇒ absent) whose libm evaluation is
@@ -79,6 +93,8 @@ const _F64_MINNORMISH = 6.7e-290   # ≈ 2^-960: comfortably clear of subnormals
     project(fr, ρ, v; R)
 @inline _finish(::Type{fr}, ρ::ProjSpec, R::Int, b::BigExactF) where {fr<:Binary} =
     project(fr, ρ, b.f(); R)
+@inline _finish(::Type{fr}, ρ::ProjSpec, R::Int, s::StickyF) where {fr<:Binary} =
+    project(fr, ρ, s.v; R, sticky=s.sgn)
 function _finish(::Type{fr}, ρ::ProjSpec, R::Int, e::EncloseF) where {fr<:Binary}
     yd = e.yd
     if yd == yd && isfinite(yd) && abs(yd) >= _F64_MINNORMISH   # yd==yd: not NaN
@@ -207,9 +223,10 @@ end
 """
     Convert(fr, ρ, x) -> fr
 
-Draft §4.9 Convert⟨f_x, f_r, ρ⟩. Accepts `Binary`, IEEE floats (widened exactly to
-the Float64 carrier), `Integer` (exact via a sufficiently wide BigFloat), and
-`BigFloat` (projected directly; the caller warrants the value is exact).
+Draft §4.9 Convert⟨f_x, f_r, ρ⟩. Accepts `Binary`, IEEE binary16/32/64
+floats (widened exactly to the Float64 carrier), `Float128` (projected directly),
+`Integer` (exact via a sufficiently wide BigFloat), and `BigFloat` (projected
+directly; the caller warrants the value is exact).
 """
 @inline function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::Binary;
                          rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
@@ -218,6 +235,10 @@ end
 @inline function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::Union{Float64,Float32,Float16};
                          rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
     project(fr, ρ, Float64(x); R=_drawR(ρ, rng, R))   # exact widening
+end
+@inline function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::Float128;
+                         rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
+    project(fr, ρ, x; R=_drawR(ρ, rng, R))            # preserve all 113 significand bits
 end
 function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::Integer;
                  rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)

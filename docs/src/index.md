@@ -5,7 +5,7 @@ standard — arithmetic formats for machine learning at bitwidths 3–8.*
 
 Bit-exact defined results on every default path; one projection engine as the single
 write path into a code point; approximation only behind an explicitly named,
-exhaustively measured κ registry; ≈ 8.8 million test assertions; table-gather kernels
+exhaustively measured κ registry; ≈ 8.9 million test assertions; table-gather kernels
 at fractions of a nanosecond per element.
 
 ```julia-repl

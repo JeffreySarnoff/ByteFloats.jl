@@ -22,9 +22,11 @@ From the REPL:
     include("benchmark/benchmarking.jl");
     generate_report("benchmarking/benchmark_report.md")
 
-Expect roughly 8–14 minutes and ~270 measurement rows. The table-builds section
-deliberately measures cold builds (up to ~90 ms each, many samples) plus warm
-cache hits, and the scalar-operation tables appear in FOUR variants per arity
+Expect roughly 8–14 minutes and ~280 measurement rows (add two more with
+`julia -t N`, N > 1 — the threaded-vs-sequential K=8 ternary comparison only
+runs with more than one Julia thread). The table-builds section deliberately
+measures cold builds (up to ~90 ms each, many samples) plus warm cache hits,
+and the scalar-operation tables appear in FOUR variants per arity
 (unary 30, binary 18, ternary 3 — each measured four ways).
 
 ## How to read the scalar tables

@@ -205,7 +205,7 @@ bias. Stochastic rounding is right *on average*:
 
 ```julia
 target = 0.30078125                       # ν = 3/16 of an ulp above 0.296875
-σ = ProjSpec(StochasticA{16}(), SatNone())
+σ = RSA_SatNone(16)                       # StochasticA{16} with SatNone
 rng = Xoshiro(1)
 m = mean(decode(Convert(Binary8p4se, σ, target; rng)) for _ in 1:200_000)
 (decode(Binary8p4se(target)), m)
@@ -292,7 +292,7 @@ increments in expectation:
 
 ```julia
 function accumulate_demo(nsteps, g)
-    σ = ProjSpec(StochasticA{16}(), SatNone())
+    σ = RSA_SatNone(16)
     rng = Xoshiro(11)
     acc_rne = Binary8p3se(0.0); acc_sto = Binary8p3se(0.0)
     for _ in 1:nsteps

@@ -21,6 +21,12 @@
 const DRAFT_REVISION = "IEEE P3109 working draft, uploaded 2026-07-17"
 draft_revision() = DRAFT_REVISION
 
+@inline _mixed_radix_codes(lin::Int, ::Tuple{}) = ()
+@inline function _mixed_radix_codes(lin::Int, Ks::Tuple{Int,Vararg{Int}})
+    K = first(Ks)
+    (lin & ((1 << K) - 1), _mixed_radix_codes(lin >> K, Base.tail(Ks))...)
+end
+
 # ---------------------------------------------------------------------------
 # κ measurement
 # ---------------------------------------------------------------------------
@@ -66,13 +72,7 @@ function measure_kappa(fn::F, op::Symbol, fr::Type{<:Binary},
         for lin in 0:total - 1
             # mixed-radix decode of the linear index: argument i's code point is
             # the next Ks[i]-bit digit of `lin` (radix 2^Ks[i] per position)
-            codes = Vector{Int}(undef, N)
-            r = lin
-            for i in 1:N
-                codes[i] = r & ((1 << Ks[i]) - 1)
-                r >>= Ks[i]
-            end
-            d = visit(ntuple(i -> codes[i], Val(N)))
+            d = visit(_mixed_radix_codes(lin, Ks))
             isnan(d) && return (NaN, true)
             κ = max(κ, d)
         end

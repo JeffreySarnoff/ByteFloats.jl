@@ -270,7 +270,7 @@ is ν = 3/16 of an ulp, so `StochasticA{4}` must round up for exactly 3 of the 1
 draws:
 
 ```julia
-σ4 = ProjSpec(StochasticA{4}(), SatNone())
+σ4 = RSA_SatNone(4)                  # ≡ ProjSpec(StochasticA{4}(), SatNone())
 x = 2.0 + 3/64
 count(decode(ByteFloats.project(Binary8p4se, σ4, x; R)) == 2.25 for R in 0:15)
 ```

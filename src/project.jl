@@ -354,7 +354,8 @@ project(d, sticky=+1) == project(u, sticky=-1) that common code is the answer;
 otherwise a projection grid point sits inside the interval and precision escalates.
 """
 function project_interval(::Type{T}, ρ::ProjSpec, f; R::Int=0, maxprec::Int=4096) where {T<:Binary}
-    prec = 256
+    maxprec >= 2 || throw(ArgumentError("maxprec must be at least 2 bits (got $maxprec)"))
+    prec = min(256, maxprec)
     while true
         d, u = f(prec)
         if isequal(d, u)
@@ -364,6 +365,6 @@ function project_interval(::Type{T}, ρ::ProjSpec, f; R::Int=0, maxprec::Int=409
         cu = project(T, ρ, u; R, sticky=-1)
         codepoint(cd) == codepoint(cu) && return cd
         prec >= maxprec && error("project_interval: unresolved at $maxprec bits (op enclosure too wide or true value pathologically near a grid point)")
-        prec *= 2
+        prec = min(2prec, maxprec)
     end
 end

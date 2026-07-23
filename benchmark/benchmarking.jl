@@ -18,7 +18,8 @@ using Statistics: median
 using Random
 using ByteFloats
 using ByteFloats: project, order_key, get_table, empty_tables!, _f128, opinfo, OP_REGISTRY,
-             _UNARY_OPS, _BINARY_OPS, _TERNARY_OPS, rawvalue, decode, apply_op
+             _UNARY_OPS, _BINARY_OPS, _TERNARY_OPS, rawvalue, decode, apply_op,
+             TERNARY_EAGER_BITS, TERNARY_ADAPTIVE_BITS, THREAD_MIN_ELEMS, THREADED_KERNELS
 
 # ---------------------------------------------------------------------------
 # formatting helpers
@@ -150,6 +151,14 @@ function preflight(::Type{T}) where {T<:Binary}
     fma3(x, y, z) = FMA(T, RNE_SatNone, x, y, z); fma3(a, b, c)
     ok = @allocated(add2(a, b)) == 0 && @allocated(prj(2.3)) == 0 && @allocated(fma3(a, b, c)) == 0
     ok || error("preflight failed: warm scalar paths allocate — measurements would reflect dispatch, not arithmetic")
+    # wide-spread FMA/FAA (the sticky-head escalation, ops_scalar.jl's StickyF) must
+    # also be allocation-free — it replaced a BigFloat-allocating fallback.
+    W = Binary8p1se
+    wa, wb, wc = W(2.0^60), W(2.0^-100), W(2.0^-100)
+    wfma(x, y, z) = FMA(W, RNE_SatNone, x, y, z); wfma(wa, wb, wc)
+    wfaa(x, y, z) = FAA(W, RNE_SatNone, x, y, z); wfaa(wa, wb, wc)
+    wok = @allocated(wfma(wa, wb, wc)) == 0 && @allocated(wfaa(wa, wb, wc)) == 0
+    wok || error("preflight failed: wide-spread FMA/FAA (sticky-head escalation) allocates")
     nothing
 end
 
@@ -261,6 +270,50 @@ function bench_kernels(::Type{T}; n=65536) where {T<:Binary}
     rows
 end
 
+
+# Ternary (FMA/FAA/Clamp) tables are bitwidth-gated (tables.jl's eager/adaptive/
+# never tiers), unlike unary/binary which always table. Each tier is measured
+# against a scalar-loop baseline obtained by forcing the policy Refs off around
+# the measurement (untimed, restored immediately after) — never inside the
+# timed closure. The threaded K=8 comparison only runs when the process actually
+# has more than one Julia thread (`julia -t N`); Sys.CPU_THREADS in the report
+# header is a machine property and does not imply `Threads.nthreads() > 1`.
+function bench_ternary_tiers(; n=65536)
+    perel(b, m) = string(round(median(b).time / m * 1e9; digits=2), " ns/elem — ",
+                         round(m / median(b).time / 1e9; digits=2), " Gelem/s")
+    rows = Row[]
+    for (tag, T, tabled) in (("K=4 (eager table)", Binary4p2se, true),
+                             ("K=6 (eager table)", Binary6p3se, true),
+                             ("K=8 (compute)",     Binary8p3se, false))
+        A = codes_pool(T, n); B = codes_pool(T, n); C = codes_pool(T, n)
+        empty_tables!()
+        tabled && get_table(:FMA, T, T, T, T, RNE_SatNone)   # warm: measure gather, not build
+        b = @be similar(A) vmap!(_, Val(:FMA), T, RNE_SatNone, A, B, C) evals=1
+        push!(rows, Row("FMA $tag, n=$n", b; extra=perel(b, n)))
+        olde, olda, oldt = TERNARY_EAGER_BITS[], TERNARY_ADAPTIVE_BITS[], THREADED_KERNELS[]
+        TERNARY_EAGER_BITS[] = 0; TERNARY_ADAPTIVE_BITS[] = 0; THREADED_KERNELS[] = false
+        empty_tables!()
+        b = @be similar(A) vmap!(_, Val(:FMA), T, RNE_SatNone, A, B, C) evals=1
+        push!(rows, Row("FMA $tag, scalar-loop baseline, n=$n", b; extra=perel(b, n)))
+        TERNARY_EAGER_BITS[] = olde; TERNARY_ADAPTIVE_BITS[] = olda; THREADED_KERNELS[] = oldt
+        empty_tables!()
+    end
+    if Threads.nthreads() > 1
+        T = Binary8p3se
+        A = codes_pool(T, n); B = codes_pool(T, n); C = codes_pool(T, n)
+        old = THREAD_MIN_ELEMS[]
+        THREAD_MIN_ELEMS[] = 1
+        b = @be similar(A) vmap!(_, Val(:FMA), T, RNE_SatNone, A, B, C) evals=1
+        push!(rows, Row("FMA K=8 (compute), threaded [$(Threads.nthreads())t], n=$n", b;
+                        extra=perel(b, n)))
+        THREAD_MIN_ELEMS[] = typemax(Int)
+        b = @be similar(A) vmap!(_, Val(:FMA), T, RNE_SatNone, A, B, C) evals=1
+        push!(rows, Row("FMA K=8 (compute), sequential [1t], n=$n", b; extra=perel(b, n)))
+        THREAD_MIN_ELEMS[] = old
+    end
+    rows
+end
+
 function bench_sorting(::Type{T}; n=65536) where {T<:Binary}
     A = codes_pool(T, n)
     rows = Row[]
@@ -347,7 +400,8 @@ function generate_report(path::AbstractString="benchmark_report.md"; seed=2026)
     open(path, "w") do io
         println(io, "# ByteFloats.jl benchmark report")
         println(io, "\nGenerated: ", string(Dates_now()), "  ·  Julia ", VERSION,
-                "  ·  ", Sys.CPU_NAME, " (", Sys.CPU_THREADS, " threads)",
+                "  ·  ", Sys.CPU_NAME, " (", Sys.CPU_THREADS, " logical CPUs, ",
+                Threads.nthreads(), " Julia thread", Threads.nthreads() == 1 ? "" : "s", ")",
                 "  ·  Float128 paths: ", _f128() ? "enabled" : "disabled",
                 "  ·  Chairmarks ", pkgversion(Chairmarks))
         println(io, "\nReference format for per-operation tables: `Binary8p4se` under ",
@@ -390,9 +444,27 @@ function generate_report(path::AbstractString="benchmark_report.md"; seed=2026)
             bench_modes(T))
         write_table(io, "Array kernels (vmap)",
             "Warm caches: table specializations prebuilt, so table rows measure the " *
-            "gather; scalar-loop rows measure the full compute pipeline per element." *
+            "gather; scalar-loop rows measure the full compute pipeline per element. " *
+            "The ternary row here is `Binary8p4se` (K=8, always the compute path); see " *
+            "the next section for how the ternary bitwidth policy behaves across K." *
             " Operands: all code points — NaN and ±Inf sampled.",
             bench_kernels(T); extra_header="per element")
+        write_table(io, "Ternary bitwidth tiers (FMA/FAA)",
+            "`FMA`/`FAA`/`Clamp` are total functions on `2^(K1+K2+K3)` code points, " *
+            "but that count spans 512 B (K=3) to 16 MiB (K=8), so the array kernel " *
+            "tables small operand formats eagerly, tables mid-size ones adaptively " *
+            "(after enough elements amortize the build; not shown here — see the " *
+            "adaptive-cache gate in `test/ternary_opt.jl`), and always runs the scalar " *
+            "compute kernel at K=8, threaded above a size cutoff when " *
+            "`Threads.nthreads() > 1`. Each tier's optimized row is paired with a " *
+            "scalar-loop baseline (policy Refs forced off around the measurement, " *
+            "restored after) so the win is visible per tier; this process has " *
+            "$(Threads.nthreads()) Julia thread$(Threads.nthreads() == 1 ? "" : "s")." *
+            (Threads.nthreads() == 1 ?
+                " No threaded/sequential comparison below — rerun with `julia -t N` " *
+                "(N > 1) to see it." : "") *
+            " Same reference format, ρ, and operand pool discipline as Array kernels above.",
+            bench_ternary_tiers(); extra_header="per element")
         write_table(io, "Sorting (64 K values)",
             "Counting sort is installed as the default algorithm for `Binary` vectors." * " Operands: all code points — NaN and ±Inf sampled.",
             bench_sorting(T))

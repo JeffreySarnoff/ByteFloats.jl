@@ -1,10 +1,10 @@
 # API Reference
 
 Docstrings for the documented surface of the package. The full export list is far
-larger (368 names, including the 120 format aliases and the generated operation and
-block registers); names without docstrings are covered descriptively in the
-[User Guide](@ref) and [Technical Guide](@ref), and completing per-name docstring
-coverage is tracked work.
+larger (393 names, including the 120 format aliases, the predefined projection-spec
+grid, and the generated operation and block registers); names without docstrings are
+covered descriptively in the [User Guide](@ref) and [Technical Guide](@ref), and
+completing per-name docstring coverage is tracked work.
 
 ## Public API
 

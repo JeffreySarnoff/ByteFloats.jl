@@ -77,10 +77,14 @@ julia> codepoint(x)                       # the raw byte (extends Base.codepoint
     check costs nothing measurable — 2.1 ns, identical to unchecked `rawvalue`.
     Round-tripping is `T(codepoint(x)) === x`.
 
-`Convert` accepts `Binary` values (any format), `Float16/32/64`, `Integer`, and
-`BigFloat` — types whose values it can project *exactly*. For other `Real`s, convert
-explicitly first (e.g. `Binary8p4se(Float64(π))`) and own the double rounding;
-`Rational` inputs throw with that guidance rather than double-round silently.
+`Convert` accepts `Binary` values (any format), `Float16/32/64`, `Float128`,
+`Integer`, and `BigFloat` — types whose values it can project *exactly*.
+`Float128` projects directly, preserving all 113 significand bits: a value that
+sits a hair above a rounding midpoint converts correctly where staging through
+`Float64` would round it onto the midpoint first and then break the tie the wrong
+way. For other `Real`s, convert explicitly first (e.g. `Binary8p4se(Float64(π))`)
+and own the double rounding; `Rational` inputs throw with that guidance rather
+than double-round silently.
 
 Every format has exactly one NaN and no negative zero; extended formats add ±Inf:
 
@@ -123,9 +127,40 @@ Rounding modes: `NearestTiesToEven`, `NearestTiesToAway`, `TowardPositive`,
 julia> ρ = ProjSpec(TowardPositive(), SatFinite())
 (TowardPositive, SatFinite)
 
-julia> RNE_SatNone, RNE_SatFinite         # the two common specs, predefined
-((NearestTiesToEven, SatNone), (NearestTiesToEven, SatFinite))
+julia> RTP_SatFinite === ρ                # every pairing is also predefined
+true
 ```
+
+### Predefined specs
+
+Every deterministic (rounding, saturation) pairing is exported as a constant, named
+`R<mode>_Sat<mode>`:
+
+| | `SatFinite` | `SatPropagate` | `SatNone` |
+|---|---|---|---|
+| `NearestTiesToEven` | `RNE_SatFinite` | `RNE_SatPropagate` | `RNE_SatNone` |
+| `NearestTiesToAway` | `RNA_SatFinite` | `RNA_SatPropagate` | `RNA_SatNone` |
+| `TowardPositive` | `RTP_SatFinite` | `RTP_SatPropagate` | `RTP_SatNone` |
+| `TowardNegative` | `RTN_SatFinite` | `RTN_SatPropagate` | `RTN_SatNone` |
+| `TowardZero` | `RTZ_SatFinite` | `RTZ_SatPropagate` | `RTZ_SatNone` |
+| `ToOdd` | `RTO_SatFinite` | `RTO_SatPropagate` | `RTO_SatNone` |
+
+The stochastic families are parameterized by the random-bit budget `N`, so their
+predefined forms are *constructors* rather than constants: `RSA_*` for
+`StochasticA`, `RSB_*` for `StochasticB`, `RSC_*` for `StochasticC`, each crossed
+with the three saturation modes. Call them with the budget — or without, for the
+default `N = 8` (`ByteFloats.DEFAULT_RBITS`):
+
+```julia-repl
+julia> RSA_SatNone()                      # StochasticA with the default N = 8
+(StochasticA[8], SatNone)
+
+julia> RSC_SatFinite(16) === ProjSpec(StochasticC{16}(), SatFinite())
+true
+```
+
+`RNE_SatNone` is the package-wide default spec (`default_projspec`), and is what
+every Base-register operator uses.
 
 Rounding chooses the neighbor; saturation decides what out-of-range results become.
 Watch all three interact on an overflowing product in `Binary8p4se`
@@ -140,7 +175,7 @@ Binary8p4se(Inf ≡ 0x7f)
 julia> Multiply(Binary8p4se, RNE_SatFinite, w, two)     # overflow → MaxFinite
 Binary8p4se(224.0 ≡ 0x7e)
 
-julia> Multiply(Binary8p4se, ProjSpec(TowardZero(), SatNone()), w, two)
+julia> Multiply(Binary8p4se, RTZ_SatNone, w, two)
 Binary8p4se(224.0 ≡ 0x7e)   # SatNone + directed-toward-zero clamps finite
 ```
 
@@ -157,7 +192,7 @@ itself, which makes single projections exactly reproducible and is the right too
 tests:
 
 ```julia-repl
-julia> σ = ProjSpec(StochasticA{8}(), SatNone());
+julia> σ = RSA_SatNone();                 # ≡ ProjSpec(StochasticA{8}(), SatNone())
 
 julia> Add(Binary8p4se, σ, Binary8p4se(2.0), Binary8p4se(0.03125); rng = Xoshiro(1))
 Binary8p4se(2.0 ≡ 0x48)
@@ -175,13 +210,17 @@ The exact fraction here is 1/8 of an ulp, so over all 256 draws exactly 32 round
 ## Scalar operations: the two registers
 
 **The spec-named register** exposes every draft operation under its draft name with an
-explicit result format and spec: `Op(fr, ρ, operands...)`. Thirty unary operations
-(`Abs`, `Negate`, `Sqrt`, `RSqrt`, `Recip`, `Exp`, `Exp2`, `ExpMinusOne`, `Log`,
-`Log2`, `LogOnePlus`, `Softplus`, the trig/hyperbolic families, the π-scaled
-families), eighteen binary (`Add`, `Subtract`, `Multiply`, `Divide`, `CopySign`,
-`Hypot`, `ArcTan2`, `ArcTan2Pi`, and the eight Minimum/Maximum variants plus the
-Finite variants), three ternary (`FMA`, `FAA`, `Clamp`), and `Convert`. Operands may
-be any formats; the result format is the first argument.
+explicit result format and spec: `Op(fr, ρ, operands...)`. Operands may be any
+formats; the result format is the first argument. The catalog:
+
+- **30 unary** — `Abs`, `Negate`, `Sqrt`, `RSqrt`, `Recip`, `Exp`, `Exp2`,
+  `ExpMinusOne`, `Log`, `Log2`, `LogOnePlus`, `Softplus`, the trig/hyperbolic
+  families, and the π-scaled families;
+- **18 binary** — `Add`, `Subtract`, `Multiply`, `Divide`, `CopySign`, `Hypot`,
+  `ArcTan2`, `ArcTan2Pi`, and the eight Minimum/Maximum variants plus the Finite
+  variants;
+- **3 ternary** — `FMA`, `FAA`, `Clamp`;
+- **`Convert`** — the one operation that also accepts non-`Binary` operands.
 
 **The Base register** makes each format an ordinary Julia number under its *default*
 spec (`RNE_SatNone`): `+ - * /`, `fma`, `exp`, `log`, `sqrt`, `min`, `max`, `abs`,
@@ -226,8 +265,27 @@ For pure (non-stochastic) specs, unary and binary array calls run as **table
 gathers**: the first call builds and caches a 256-byte (unary) or 64 KiB (binary)
 result table for that exact `(op, formats, ρ)` specialization, and every later
 element costs a single lookup — measured at 0.27 ns/element unary, 0.5 ns/element
-binary. Ternary and stochastic calls run the scalar pipeline per element. Inspect or
-reset the cache with `table_bytes()` and `empty_tables!()`.
+binary.
+
+Ternary operations (`FMA`, `FAA`, `Clamp`) ride the same gather whenever the three
+operand bitwidths keep the table affordable, tiered by `K1 + K2 + K3`:
+
+- **Eager** (up to 256 KiB; every all-`K ≤ 6` signature): built on the first
+  array call, like unary/binary.
+- **Adaptive** (up to 2 MiB; the `K = 7` band): built only once a signature has
+  processed enough elements to earn its build, in a byte-bounded, LRU-evicted
+  cache.
+- **Compute** (`K = 8`; a 16 MiB table stops being a cache win): the scalar
+  pipeline runs per element, optionally threaded for long arrays.
+
+Every table entry — eager or adaptive — is built through the scalar path, so it is
+bit-identical by construction. Stochastic calls always run the scalar pipeline per
+element (each element draws its own random bits).
+
+Inspect or reset the cache — unary/binary and ternary alike — with `table_bytes()`
+and `empty_tables!()`. The ternary policy thresholds and the threading cutoff are
+internal `Ref`s (`ByteFloats.TERNARY_EAGER_BITS` and neighbors in `tables.jl` and
+`kernels.jl`) for the rare case you need to tune them.
 
 Sorting is special-cased: values compare through integer order keys, and vectors of
 `Binary` sort with an **O(n) counting sort** installed as the default algorithm —
@@ -319,8 +377,12 @@ implementations must be acknowledged with an explicit `κ = NaN`. Retrieve with
   one function barrier `f(::Type{T}, …) where {T}` restores full speed.
 - **Bulk work belongs in array calls.** The table-gather kernels are ~50× the scalar
   path; the first call per specialization pays a one-time build (≈ 0.4 ms unary,
-  tens of ms for 8×8 binary tables).
-- **Stochastic and ternary array calls** run the scalar pipeline per element; pass an
+  tens of ms for 8×8 binary tables, up to a few ms for a 2 MiB ternary table).
+- **Ternary array calls scale with bitwidth.** `K ≤ 6` operand formats table
+  eagerly (~35× the scalar loop); `K = 7` tables adaptively once a signature is
+  hot; `K = 8` runs the compute kernel, optionally threaded for long arrays
+  (~4× at 4 threads) — no action needed, the array call picks the right path.
+- **Stochastic array calls** run the scalar pipeline per element; pass an
   explicit `rng` for reproducibility.
 - **Memory:** `PackedVector` for storage; `BlockVector` for many blocks.
 - The reproducible benchmark suite lives at `benchmark/benchmarking.jl` and generates

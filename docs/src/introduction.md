@@ -30,7 +30,7 @@ the position that for value sets this small there is no excuse for approximation
 - **Exhaustively tested.** The value sets are tiny (≤ 256 points per format), so the
   test suite does not sample — it enumerates: every operation on every input, every
   ordering of every pair, every stochastic draw at boundary budgets. The shipped suite
-  carries ≈ 8.8 million assertions.
+  carries ≈ 8.9 million assertions.
 - **Fast where it matters.** Pure-mode elementwise work runs through precomputed
   lookup tables (sub-nanosecond per element); the scalar path is fully specialized and
   allocation-free (≈ 18 ns for a complete `Add` including projection); sub-byte packed
@@ -49,10 +49,10 @@ Binary8p4se(1.625 ≡ 0x45)
 julia> x + Binary8p4se(0.25)         # Base operators use the format's default spec
 Binary8p4se(1.875 ≡ 0x47)
 
-julia> Add(Binary8p4se, ProjSpec(TowardPositive(), SatNone()), x, Binary8p4se(0.25))
+julia> Add(Binary8p4se, RTP_SatNone, x, Binary8p4se(0.25))
 Binary8p4se(1.875 ≡ 0x47)            # spec-named register: any mode, explicitly
 
-julia> σ = ProjSpec(StochasticA{8}(), SatNone());   # stochastic rounding, N = 8 bits
+julia> σ = RSA_SatNone();            # stochastic rounding, default N = 8 bits
 
 julia> Add(Binary8p4se, σ, Binary8p4se(2.0), Binary8p4se(0.03125); R = 255)
 Binary8p4se(2.25 ≡ 0x49)             # explicit draw R makes it reproducible

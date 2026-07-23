@@ -74,7 +74,17 @@ export RoundingMode3109, NearestTiesToEven, NearestTiesToAway, TowardPositive,
        TowardNegative, TowardZero, ToOdd, StochasticA, StochasticB, StochasticC,
        SaturationMode, SatFinite, SatPropagate, SatNone,
        ProjSpec, RoundOf, SatOf, roundingmode, saturationmode,
-       isstochastic, nrandbits, RNE_SatNone, RNE_SatFinite, default_projspec, projmode
+       isstochastic, nrandbits,
+       RNE_SatFinite, RNE_SatPropagate, RNE_SatNone,
+       RNA_SatFinite, RNA_SatPropagate, RNA_SatNone,
+       RTP_SatFinite, RTP_SatPropagate, RTP_SatNone,
+       RTN_SatFinite, RTN_SatPropagate, RTN_SatNone,
+       RTZ_SatFinite, RTZ_SatPropagate, RTZ_SatNone,
+       RTO_SatFinite, RTO_SatPropagate, RTO_SatNone,
+       RSA_SatFinite, RSA_SatPropagate, RSA_SatNone,
+       RSB_SatFinite, RSB_SatPropagate, RSB_SatNone,
+       RSC_SatFinite, RSC_SatPropagate, RSC_SatNone,
+       default_projspec, projmode
 
 # comparison, classification, stepping (Groups D/M)
 export TotalOrder, Class, FPClass,

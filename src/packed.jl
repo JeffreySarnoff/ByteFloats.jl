@@ -25,7 +25,7 @@ end
 function PackedVector(A::AbstractVector{F}) where {F<:Binary}
     K = bitwidth(F)
     n = length(A)
-    words = zeros(UInt64, max(1, cld(n * K, 64)))
+    words = zeros(UInt64, cld(n * K, 64))
     @inbounds for (i, v) in enumerate(A)
         w, off = _wordpos(K, i)
         c = UInt64(codepoint(v))
@@ -83,16 +83,15 @@ on packed words directly — the deliberate compute-unpacked/store-packed bounda
 function vmap(op::Symbol, fr::Type{<:Binary}, ρ::ProjSpec, pv::PackedVector{F};
               rng::MaybeRNG=nothing) where {F<:Binary}
     out = Vector{fr}(undef, pv.n)
+    isempty(pv) && return out
     buf = Vector{F}(undef, _PACK_TILE)
-    seg = Vector{fr}(undef, _PACK_TILE)
     i = 1
     while i <= pv.n
         len = min(_PACK_TILE, pv.n - i + 1)
         unpack_tile!(buf, pv, i, len)
         bv = view(buf, 1:len)
-        sv = view(seg, 1:len)
-        isstochastic(ρ) ? vmap!(sv, Val(op), fr, ρ, bv, rng) : vmap!(sv, Val(op), fr, ρ, bv)
-        copyto!(out, i, seg, 1, len)
+        dest = view(out, i:i + len - 1)
+        isstochastic(ρ) ? vmap!(dest, Val(op), fr, ρ, bv, rng) : vmap!(dest, Val(op), fr, ρ, bv)
         i += len
     end
     out

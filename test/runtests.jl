@@ -25,7 +25,7 @@ using ByteFloats
 using Quadmath: Float128
 using ByteFloats: project, project_interval, round_to_precision, encode, order_key,
     KIND_FIN, nan_code, posinf_code, neginf_code, signmask,
-    apply_op, ωeval, BigExactF, EncloseF, OP_REGISTRY, opinfo, _UNARY_OPS,
+    apply_op, ωeval, BigExactF, EncloseF, StickyF, OP_REGISTRY, opinfo, _UNARY_OPS,
     get_table, blockdecode, _NAMED, Enclose128F, _USE_FLOAT128, _f128,
     _rtp_core, _rtp_f64, _extremal_SQ, _decode_compute, _decode_table, MaybeRNG,
     MaxFiniteOf, MinFiniteOf, MinPositiveOf, MaxSubnormalOf, MinNormalOf, formatname,
@@ -893,6 +893,18 @@ println("approx.jl verified")
         @test codepoint(project(Binary8p3se, σ, d; R)) ==
               codepoint(project(Binary8p3se, σ, Float128(d); R))
     end
+    # Float128 inputs must not double-round through Float64 at a target midpoint.
+    x128 = Float128(0.53125) + ldexp(one(Float128), -101)
+    @test Float64(x128) == 0.53125
+    @test decode(Convert(Binary8p4se, RNE_SatNone, x128)) == 0.5625
+
+    # The interval ladder must honor a non-power-of-two precision ceiling exactly.
+    seen_precisions = Int[]
+    unresolved = p -> (push!(seen_precisions, p); (BigFloat(0.7), BigFloat(0.8)))
+    @test_throws ErrorException project_interval(Binary3p2se, RNE_SatNone, unresolved; maxprec=300)
+    @test seen_precisions == [256, 300]
+    @test_throws ArgumentError project_interval(Binary3p2se, RNE_SatNone, unresolved; maxprec=1)
+
     # sticky semantics on the Float128 carrier (the asymptote machinery)
     @test decode(project(Binary8p4se, ProjSpec(TowardNegative(), SatNone()),
                          Float128(1); sticky=-1)) == decode(NextLessThan(one(Binary8p4se)))
@@ -937,9 +949,17 @@ println("approx.jl verified")
         @test setprecision(() -> BigFloat(r) == BigFloat(x) + BigFloat(y), BigFloat, 300)
     end
     @test ωeval(Val(:FMA), 2.0^46, 2.0^46, 1.0) isa Float128       # ΔE(p,z) = 92
-    @test ωeval(Val(:FMA), 2.0^47, 2.0^46, 1.0) isa BigExactF      # 93 > 92
+    let r = ωeval(Val(:FMA), 2.0^47, 2.0^46, 1.0)                  # 93 > 92: sticky head
+        @test r isa StickyF{Float64} && r.v == 2.0^93 && r.sgn == 1
+    end
     @test ωeval(Val(:FAA), 2.0^98, 1.0, 1.0) isa Float128
-    @test ωeval(Val(:FAA), 2.0^99, 1.0, 1.0) isa BigExactF
+    let r = ωeval(Val(:FAA), 2.0^99, 1.0, 1.0)                     # 99 > 98: distilled, exact
+        @test r isa Float128
+        @test setprecision(() -> BigFloat(r) == BigFloat(2.0^99) + 2, BigFloat, 300)
+    end
+    let r = ωeval(Val(:FAA), 2.0^99, 2.0^-99, 2.0^-99)             # inexact tail → sticky
+        @test r isa StickyF{Float128} && Float64(r.v) == 2.0^99 && r.sgn == 1
+    end
 
     # --- CR enclosure soundness: inexact Divide now returns the Float64-CR fast
     #     enclosure — the eager estimate is the IEEE correctly-rounded quotient
@@ -1173,5 +1193,11 @@ end
     @test @allocated(mk(0x08)) == 0
     @test Base.return_types(mk, Tuple{UInt8}) == [Binary5p3sf]
 end
+
+# ==========================================================================
+# Bitwidth-specific FMA/FAA performance paths (ternary tables, adaptive cache,
+# sticky-head escalation, threaded compute)
+# ==========================================================================
+include("ternary_opt.jl")
 
 # end # @testset "ByteFloats.jl"
