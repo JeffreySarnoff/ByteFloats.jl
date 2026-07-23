@@ -19,9 +19,10 @@ Pkg.instantiate()
 
 include(joinpath(DOCS, "make.jl"))
 
-const INDEX = joinpath(DOCS, "build", "index.html")
+const BUILD = get(ENV, "DOCS_BUILD_DIR", "build")
+const INDEX = joinpath(DOCS, BUILD, "index.html")
 if isfile(INDEX)
     @info "Documentation built successfully" site = INDEX
 else
-    @warn "make.jl completed but no index.html found — check the build log" dir = joinpath(DOCS, "build")
+    @warn "make.jl completed but no index.html found — check the build log" dir = joinpath(DOCS, BUILD)
 end

@@ -10,6 +10,7 @@ makedocs(;
     sitename = "ByteFloats.jl",
     modules = [ByteFloats],
     authors = "ByteFloats.jl contributors",
+    build = get(ENV, "DOCS_BUILD_DIR", "build"),
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", nothing) == "true",
         canonical = "https://example.github.io/ByteFloats.jl",   # set to the real Pages URL
@@ -22,6 +23,7 @@ makedocs(;
     pages = [
         "Home" => "index.md",
         "Introduction" => "introduction.md",
+        "Cheat Sheet" => "cheat_sheet.md",
         "User Guide" => "user_guide.md",
         "User Examples" => "user_examples.md",
         "Technical Guide" => "technical_guide.md",

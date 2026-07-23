@@ -22,6 +22,8 @@ true
 
 - **[Introduction](@ref)** — what the package is, the design pillars, a
   thirty-second tour, installation.
+- **[Cheat Sheet](@ref)** — one-page lookup for format names, conversion,
+  projections, operations, arrays, blocks, packed storage, and common traps.
 - **[User Guide](@ref)** — the complete public API in usage order: formats, values,
   projection specifications, the two operation registers, arrays and sorting,
   blocks, packed storage, conformance and κ, performance guidance.
