@@ -63,7 +63,7 @@ julia --project=benchmark benchmark/benchmarking.jl benchmark_report.md
 
 <!-- updated by /doc-it -->
 ```
-src/           twelve source layers (formats → … → approx) plus the vendored
+src/           thirteen source layers (formats → … → rand) plus the vendored
                Float128 fma/faa soft-float modules; see the Technical Guide
 test/          the consolidated exhaustive suite (runtests.jl) plus the
                independent validation harness (validate_correctness.jl,

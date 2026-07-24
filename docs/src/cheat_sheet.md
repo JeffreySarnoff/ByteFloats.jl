@@ -102,6 +102,15 @@ d = decode(x)                 # exact Float64 datum
     `T(0x02)` constructs code point `0x02`; `T(2)` projects the numeric value
     two. Use `Convert` when intent should be unmistakable.
 
+Random values (uniform [0,1) floor-projected; normal round-to-nearest,
+tails clamped to MaxFinite; `randn` signed formats only):
+
+```julia
+rand(T); rand(T, dims); rand!(A)      # uniform on [0, 1)
+randn(T); randn(T, dims); randn!(A)   # standard normal, always finite
+rand(Xoshiro(1), T)                   # explicit rng as usual
+```
+
 Classification and stepping:
 
 ```julia

@@ -33,12 +33,12 @@ trades speed only. CI runs both configurations
 
 ## Architecture
 
-Twelve source layers, included in a fixed order by
+Thirteen source layers, included in a fixed order by
 [`src/ByteFloats.jl`](src/ByteFloats.jl):
 
 ```
 formats → projspec → defaults → decode_encode → project → ops_scalar
-        → oracle → tables → kernels → blocks → packed → approx
+        → oracle → tables → kernels → blocks → packed → approx → rand
 ```
 
 `ops_scalar` deliberately precedes `oracle` (the evaluation-protocol structs
@@ -49,7 +49,7 @@ in `src/ByteFloats.jl` in sync when adding a layer.**
 |---|---|
 | `formats.jl` | `Binary{K,P,SGN,EXT}` type, Group M traits, format names, Base API |
 | `projspec.jl` | rounding × saturation as zero-size *types* so kernels specialize on ρ |
-| `defaults.jl` | settable session defaults (`DefaultType`, `DefaultProjection`, …); hot paths never consult them |
+| `defaults.jl` | settable session defaults (`DefaultType`, `DefaultProjection`, …); convenience forms consume them through a speculation guard |
 | `decode_encode.jl` | ωDecode / ωEncode, ordering keys, `Next*` ops |
 | `project.jl` | the projection engine: ωRoundToPrecision → ωSaturate → ωEncode |
 | `ops_scalar.jl` | `OP_REGISTRY`, `apply_op`, spec + Base register veneers |
@@ -59,6 +59,7 @@ in `src/ByteFloats.jl` in sync when adding a layer.**
 | `blocks.jl` | blocks, scaled operations, reductions (draft §5) |
 | `packed.jl` | `PackedVector`: sub-byte packed storage, unpack → compute → repack |
 | `approx.jl` | conformance declaration + the κ-approximation registry |
+| `rand.jl` | Random-API hooks: `rand` (uniform [0,1) floor-projected), `randn` (normal, SatFinite) |
 
 Plus two **vendored** soft-float modules, `src/fma128.jl` and `src/faa128.jl`,
 providing correctly-rounded `fma`/`faa` for `Float128` (needed on Windows, where
@@ -156,7 +157,7 @@ manually:
 ## Repository layout
 
 ```
-src/           the twelve layers + the two vendored Float128 modules
+src/           the thirteen layers + the two vendored Float128 modules
 test/          runtests.jl (shipped) + three manual harnesses
 docs/          Documenter site (make.jl, builddocs.jl, src/*.md) and docs/pdf/
 benchmark/     current Chairmarks suite + report generator (own environment)

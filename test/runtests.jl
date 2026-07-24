@@ -1354,6 +1354,61 @@ end
 end
 
 # ==========================================================================
+# rand.jl — Random-API integration
+# ==========================================================================
+@testset "rand.jl" begin
+    T = Binary8p4se
+
+    # The definition IS the spec: rand floor-projects the Float64 uniform
+    # stream, randn round-to-nearest-projects the normal stream with SatFinite.
+    r1, r2 = Xoshiro(7), Xoshiro(7)
+    @test all(rand(r1, T) === Convert(T, RTZ_SatNone, rand(r2, Float64)) for _ in 1:10_000)
+    r1, r2 = Xoshiro(7), Xoshiro(7)
+    @test all(randn(r1, T) === Convert(T, RNE_SatFinite, randn(r2)) for _ in 1:10_000)
+
+    # range and finiteness, across signedness/domain variants
+    for F in (Binary8p4se, Binary8p4sf, Binary6p3ue, Binary5p5uf, Binary3p1se)
+        xs = rand(Xoshiro(3), F, 5_000)
+        @test all(x -> 0.0 <= decode(x) < 1.0, xs)
+    end
+    for F in (Binary8p4se, Binary8p4sf, Binary3p1se)   # tiny-range K=3: tails clamp
+        zs = randn(Xoshiro(1), F, 5_000)
+        @test all(isfinite, zs)
+        @test any(z -> decode(z) > 0, zs) && any(z -> decode(z) < 0, zs)
+        @test maximum(abs ∘ decode, zs) <= decode(MaxFiniteOf(F))
+    end
+
+    # unsigned formats: rand fine, randn throws
+    @test 0.0 <= decode(rand(Xoshiro(1), Binary6p3ue)) < 1.0
+    @test_throws ArgumentError randn(Binary6p3ue)
+    @test_throws ArgumentError randn(Xoshiro(1), Binary8p2uf, 3)
+
+    # derived forms all reach the scalar hooks
+    @test rand(T) isa T
+    @test rand(T, 3) isa Vector{T} && length(rand(T, 3)) == 3
+    @test size(rand(Xoshiro(1), T, 2, 2)) == (2, 2)
+    @test randn(T) isa T && eltype(randn(T, 4)) === T
+    @test eltype(rand!(Vector{T}(undef, 4))) === T
+    @test eltype(randn!(Xoshiro(1), Vector{T}(undef, 4))) === T
+
+    # reproducibility: same seed, same stream
+    @test rand(Xoshiro(9), T, 100) == rand(Xoshiro(9), T, 100)
+    @test codepoint.(randn(Xoshiro(9), T, 100)) == codepoint.(randn(Xoshiro(9), T, 100))
+
+    # CDF sanity at a datum boundary: floor projection preserves P(x < 0.5)
+    @test isapprox(count(<(0.5) ∘ decode, rand(Xoshiro(42), T, 200_000)) / 200_000,
+                   0.5; atol=0.01)
+
+    # specialization: allocation-free, concretely inferred scalar draws
+    sr(rng) = rand(rng, T); sn(rng) = randn(rng, T)
+    r = Xoshiro(1); sr(r); sn(r)
+    @test @allocated(sr(r)) == 0
+    @test @allocated(sn(r)) == 0
+    @test Base.return_types(sr, Tuple{Xoshiro}) == [T]
+    @test Base.return_types(sn, Tuple{Xoshiro}) == [T]
+end
+
+# ==========================================================================
 # Bitwidth-specific FMA/FAA performance paths (ternary tables, adaptive cache,
 # sticky-head escalation, threaded compute)
 # ==========================================================================

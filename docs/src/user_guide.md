@@ -126,6 +126,32 @@ julia> Class(Binary8p4se(0.01))           # draft classification
 ClassPosNormal::FPClass = 0x06
 ```
 
+### Random values
+
+The Random API works on every format. `rand` draws the real uniform on [0, 1)
+at Float64 and floor-projects it onto the format's grid, so each code point
+receives exactly the real measure of its interval; results are always in
+[0, 1). `randn` projects a standard-normal Float64 draw round-to-nearest with
+`SatFinite`, so tail draws beyond `MaxFiniteOf(T)` clamp to the extremal finite
+datum — `randn` never returns ±Inf or NaN. `randn` requires a signed format
+(an unsigned format cannot represent negative draws and throws).
+
+```julia-repl
+julia> rand(Xoshiro(1), Binary8p4se)
+Binary8p4se(0.0703125 ≡ 0x21)
+
+julia> randn(Xoshiro(1), Binary8p4se, 3)
+3-element Vector{Binary8p4se}:
+ Binary8p4se(-0.0703125 ≡ 0xa1)
+    Binary8p4se(0.5625 ≡ 0x39)
+  Binary8p4se(-0.8125 ≡ 0xbd)
+```
+
+All derived forms work — `rand(T, dims)`, `rand!(A)`, `randn(T, dims)`,
+`randn!(A)`, with or without an explicit rng. The rng-less forms use Julia's
+task-local default generator (a `Xoshiro`), so `Random.seed!` controls them as
+usual.
+
 ## Projection specifications
 
 Every rounding decision in the package is governed by a `ProjSpec`, the pair of a
