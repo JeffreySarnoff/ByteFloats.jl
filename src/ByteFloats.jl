@@ -46,8 +46,8 @@ using .Float128FAA
 # oracle; oracle's references to them are function-body-late-bound either way, but
 # this is the order the harnesses verified.)
 include("formats.jl")
-include("defaults.jl")
 include("projspec.jl")
+include("defaults.jl")
 include("decode_encode.jl")
 include("project.jl")
 include("ops_scalar.jl")
