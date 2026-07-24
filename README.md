@@ -90,3 +90,4 @@ Float128FMA/   standalone `fma` package for Float128, vendored as src/fma128.jl
   oracle/fallback paths; `ENV["ByteFloats_Float128"] = "disable"` (before loading)
   selects the pure-MPFR configuration with bit-identical results.
 - **License: MIT** (see `LICENSE`).
+- I used Claude Fable in the development
