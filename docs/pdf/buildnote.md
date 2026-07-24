@@ -31,6 +31,9 @@ pdftoppm/pdfplumber/pypdf/qpdf at 200 dpi.
 - Long mono tokens: `\allowbreak` inserted after 284 escaped underscores and
   34 slash-joined `\texttt` pairs; one paragraph with two 23-char camelCase
   tokens absorbs its residue via local `\emergencystretch`.
+- TOC: a \newpage written into the .toc before chapter 6, so the Julia
+  Compatibility entry block starts on a fresh contents page instead of
+  splitting across pages ii/iii.
 - Unicode: the 62 non-ASCII characters in the source are all covered by
   DejaVu Sans (prose) and DejaVu Sans Mono (code) — no fallback mappings.
 
