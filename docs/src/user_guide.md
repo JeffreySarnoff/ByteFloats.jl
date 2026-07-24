@@ -284,12 +284,13 @@ Binary8p4se(Inf ≡ 0x7f)
     sees it. Library code that needs a specific projection should name it
     explicitly rather than rely on the session default.
 
-    It also costs specialization. Because the default is mutable, ρ is not a
-    compile-time constant at those call sites, so they dispatch dynamically and
-    allocate (measured: `x + y` 160 bytes, `Exp(x)` and `T(2.1)` 32 bytes each).
-    The explicit forms `Add(T, ρ, x, y)` remain fully specialized and
-    allocation-free — use them in hot code. To consume the default *without*
-    that cost, go through the `with_default_*` combinators below.
+Following the default costs nothing while it holds its initial value: the
+convenience forms consume it through the same speculation guard as the
+`with_default_*` combinators, so they compile against the constant and stay
+allocation-free with concretely inferred results (pinned in the test suite).
+Once you change the default they cross a function barrier instead — one dynamic
+dispatch per call, everything inside still specialized. The explicit forms
+`Add(T, ρ, x, y)` are unaffected either way.
 
 To *consume* a default in your own code without paying dynamic-dispatch costs,
 go through the `with_default_*` combinators — `with_default_type`,
@@ -482,10 +483,12 @@ implementations must be acknowledged with an explicit `κ = NaN`. Retrieve with
   `project` ≈ 13 ns, zero allocations). A format type read from a **non-`const`
   global** forces Julia's dynamic dispatch on every call (~1 µs for keyword calls);
   one function barrier `f(::Type{T}, …) where {T}` restores full speed.
-- **Name ρ explicitly in hot code.** The convenience forms (`x + y`, `Exp(x)`,
-  `T(2.1)`) read the mutable session default, so ρ is not statically known there
-  and they allocate. `Add(T, ρ, x, y)` with a `const` ρ is the allocation-free
-  form — that is what the ≈ 18–26 ns figure above measures.
+- **The convenience forms are free at the initial default.** `x + y`, `Exp(x)`,
+  and `T(2.1)` read the session default through a speculation guard, so they are
+  allocation-free and concretely inferred while it holds its initial value. After
+  you change the default they cost one dynamic dispatch per call; name ρ
+  explicitly (`Add(T, ρ, x, y)` with a `const` ρ) in hot code that must be
+  insensitive to the session default.
 - **Bulk work belongs in array calls.** The table-gather kernels are ~50× the scalar
   path; the first call per specialization pays a one-time build (≈ 0.4 ms unary,
   tens of ms for 8×8 binary tables, up to a few ms for a 2 MiB ternary table).

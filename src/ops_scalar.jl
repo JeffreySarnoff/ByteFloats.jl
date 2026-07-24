@@ -215,8 +215,18 @@ for op in OP_REGISTRY
                                rng::MaybeRNG=nothing, R::MaybeR=nothing)
             apply_op($V(), fr, ρ, _drawR(ρ, rng, R), $(decoded...))
         end
-        @inline $name($(same_args...); kw...) where {T<:Binary} =
-            $name(T, default_projspec(T), $(xs...); kw...)
+        # The convenience form follows the session default, consumed through the
+        # same speculation guard `with_default_projection` uses: while the default
+        # holds its initial value the call is compiled against that constant and
+        # is allocation-free, exactly like naming ρ explicitly. The guard is
+        # spelled out here rather than passed as a closure because a closure
+        # defeats `apply_op`'s Float64/escalation union split — the ops whose
+        # ωeval can escalate (Add, Subtract, Divide, Hypot) then box their result.
+        @inline function $name($(same_args...); kw...) where {T<:Binary}
+            ρ = DefaultProjection()
+            ρ === _GUARD_PROJECTION && return $name(T, _GUARD_PROJECTION, $(xs...); kw...)
+            $name(T, ρ, $(xs...); kw...)
+        end
     end
 end
 
@@ -254,7 +264,8 @@ Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::AbstractFloat; kw...) = Convert(fr,
 
 # closes the constructor loop declared in formats.jl
 @inline _convert_default(::Type{T}, v::T) where {T<:Binary} = v
-@inline _convert_default(::Type{T}, x) where {T<:Binary} = Convert(T, default_projspec(T), x)
+@inline _convert_default(::Type{T}, x) where {T<:Binary} =
+    with_default_projection((ρ, v) -> Convert(T, ρ, v), x)
 
 # ---- Base register (design §10.2): same-format, default-ρ veneers only.
 # Every method is exactly one spec-register call; there is no third semantics.

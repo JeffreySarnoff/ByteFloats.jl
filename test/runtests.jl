@@ -1284,6 +1284,38 @@ end
     addR(x, y) = Add(T, σ, x, y; R=5); addR(a, b)
     @test @allocated(addR(a, b)) == 0
     @test addR(a, b) === addR(a, b)
+
+    # The convenience forms read the *mutable* session default, so they are only
+    # allocation-free because they consume it through the speculation guard
+    # (ops_scalar.jl). Pin that: these previously boxed on every call for the ops
+    # whose ωeval can escalate (Add/Subtract/Divide/Hypot), which the explicit-ρ
+    # pins above cannot see. A closure-based guard reintroduces the boxing.
+    @testset "convenience forms consume the default without allocating" begin
+        cadd(x, y) = Add(x, y); cadd(a, b)
+        csub(x, y) = Subtract(x, y); csub(a, b)
+        cdiv(x, y) = Divide(x, y); cdiv(a, b)
+        chyp(x, y) = Hypot(x, y); chyp(a, b)
+        cexp(x) = Exp(x); cexp(a)
+        cfma(x, y, z) = FMA(x, y, z); cfma(a, b, c)
+        plus(x, y) = x + y; plus(a, b)
+        ctor(v) = T(v); ctor(2.1)
+        for (f, args) in ((cadd, (a, b)), (csub, (a, b)), (cdiv, (a, b)), (chyp, (a, b)),
+                          (cexp, (a,)), (cfma, (a, b, c)), (plus, (a, b)), (ctor, (2.1,)))
+            @test @allocated(f(args...)) == 0
+            @test Base.return_types(f, typeof(args)) == [T]
+        end
+        # and the guard must not pin the *value*: a changed default is honored,
+        # matching the explicit call, on the slow path
+        try
+            DefaultProjection!(RTZ_SatFinite)
+            @test Add(a, b) === Add(T, RTZ_SatFinite, a, b)
+            @test T(200.0) * T(2.0) === Multiply(T, RTZ_SatFinite, T(200.0), T(2.0))
+            @test T(2.1) === Convert(T, RTZ_SatFinite, 2.1)
+        finally
+            DefaultProjection!(RNE_SatNone)
+        end
+        @test Add(a, b) === Add(T, RNE_SatNone, a, b)
+    end
 end
 
 # ==========================================================================

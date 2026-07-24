@@ -186,10 +186,10 @@ Setting a rounding/saturation component rebuilds `DefaultProjection`; setting
 `DefaultProjection() === ProjSpec(DefaultRoundingMode(), DefaultSaturationMode())`.
 
 The convenience methods (`a + b`, `Exp(x)`, `T(2.1)`) **do** consult
-`DefaultProjection` — `default_projspec` reads it. Changing it changes their
-results globally, and costs specialization (ρ is no longer a compile-time
-constant, so those calls allocate). Name ρ explicitly — `Add(T, ρ, x, y)` — in
-hot code; explicit forms are unaffected by the session default.
+`DefaultProjection`, so changing it changes their results globally. They read it
+through a speculation guard: allocation-free while the default holds its initial
+value, one dispatch per call after you change it. Explicit forms
+(`Add(T, ρ, x, y)`) are unaffected by the session default.
 
 Consume a default via the combinators — never by computing on a bare
 `DefaultX()` read. No dispatch while the default is unchanged, one barrier

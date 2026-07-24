@@ -15,11 +15,13 @@
 # default. Two consequences worth stating plainly:
 #   · changing a default is a GLOBAL semantic change, visible to every caller of
 #     those forms, including other packages;
-#   · ρ is no longer a compile-time constant at those call sites, so they
-#     dispatch dynamically and allocate (measured: `x + y` 160 B, `Exp(x)` 32 B).
-#     The explicit forms — `Add(fr, ρ, x, y)` with a `const` ρ — stay fully
-#     specialized and allocation-free, and the `with_default_*` combinators below
-#     consume a default without paying that cost while it holds its initial value.
+#   · those call sites consume the default through the speculation guard below,
+#     so they stay allocation-free and concretely inferred while it holds its
+#     initial value, and cost one dynamic dispatch per call once it changes.
+#     ops_scalar.jl spells the guard out inline rather than passing a closure to
+#     `with_default_projection`: a closure defeats `apply_op`'s Float64/escalation
+#     union split, which boxed the result of every op whose ωeval can escalate.
+#     The pins live in the "specialization regressions" testset.
 # Plain `Ref` reads/writes, not atomic; set defaults from one task, not concurrently.
 #
 # Consumption discipline (the performant world-age-free pattern): a consumer
