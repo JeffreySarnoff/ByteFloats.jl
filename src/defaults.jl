@@ -9,12 +9,18 @@
 # The invariant `DefaultProjection() === ProjSpec(DefaultRoundingMode(),
 # DefaultSaturationMode())` therefore holds after any setter.
 #
-# These are *session* defaults for interactive use and library entry points that
-# opt in to them. They are deliberately not consulted by the hot paths: the
-# convenience methods (`a + b`, `Exp(x)`, …) continue to use the static
-# `default_projspec`, so their specialization and tabling behavior cannot be
-# changed — or broken — by a global. Plain `Ref` reads/writes, not atomic;
-# set defaults from one task, not concurrently.
+# `default_projspec` (projspec.jl) reads `DefaultProjection()`, so these are not
+# merely advisory: the same-format convenience methods (`a + b`, `Exp(x)`, …),
+# the Base-register veneers, and `T(x::Real)` construction all follow the session
+# default. Two consequences worth stating plainly:
+#   · changing a default is a GLOBAL semantic change, visible to every caller of
+#     those forms, including other packages;
+#   · ρ is no longer a compile-time constant at those call sites, so they
+#     dispatch dynamically and allocate (measured: `x + y` 160 B, `Exp(x)` 32 B).
+#     The explicit forms — `Add(fr, ρ, x, y)` with a `const` ρ — stay fully
+#     specialized and allocation-free, and the `with_default_*` combinators below
+#     consume a default without paying that cost while it holds its initial value.
+# Plain `Ref` reads/writes, not atomic; set defaults from one task, not concurrently.
 #
 # Consumption discipline (the performant world-age-free pattern): a consumer
 # never works directly on a `DefaultX()` result — the dispatch-steering reads
@@ -80,7 +86,7 @@ DefaultType!(T::Type{Binary{K,P,S,E}}) where {K,P,S,E} =
 
 The session's default *result* format — the format an operation projects into
 when the caller does not name one. Initialized to `Binary8p2se`. Independent of
-[`DefaultType`](@ref), which is the default *operand* format.
+`DefaultType`, which is the default *operand* format.
 """
 DefaultReturnType() = _DEFAULT_RETURN[]
 DefaultReturnType!(T::Type{Binary{K,P,S,E}}) where {K,P,S,E} =

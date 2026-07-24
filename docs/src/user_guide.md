@@ -173,8 +173,10 @@ julia> RSC_SatFinite(16) === ProjSpec(StochasticC{16}(), SatFinite())
 true
 ```
 
-`RNE_SatNone` is the package-wide default spec (`default_projspec`), and is what
-every Base-register operator uses.
+`RNE_SatNone` is the package's *initial* default spec. `default_projspec` reads the
+session default (see **Session defaults** below), so every Base-register operator,
+the same-format convenience methods, and `T(x::Real)` construction follow
+`DefaultProjection()` — `RNE_SatNone` until you change it.
 
 Rounding chooses the neighbor; saturation decides what out-of-range results become.
 Watch all three interact on an overflowing product in `Binary8p4se`
@@ -258,11 +260,36 @@ julia> DefaultRoundingMode(), DefaultSaturationMode()   # followed the projectio
 (NearestTiesToAway(), SatFinite())
 ```
 
-These are session conveniences for interactive work and code that opts in to
-them. The same-format convenience methods (`a + b`, `Exp(x)`, …) deliberately
-do **not** consult them — those stay pinned to the static `default_projspec`
-(`RNE_SatNone`), so a global cannot silently change the semantics or the
-specialization of compiled hot paths.
+`DefaultProjection` is not merely advisory: `default_projspec` reads it, so the
+same-format convenience methods (`a + b`, `Exp(x)`, …), the Base-register
+operators, and `T(x::Real)` construction all follow it.
+
+```julia-repl
+julia> x, y = Binary8p4se(200.0), Binary8p4se(2.0);
+
+julia> x * y                              # RNE_SatNone: overflow → +Inf
+Binary8p4se(Inf ≡ 0x7f)
+
+julia> DefaultProjection!(RTZ_SatFinite);
+
+julia> x * y                              # now clamps to MaxFinite
+Binary8p4se(224.0 ≡ 0x7e)
+
+julia> Multiply(Binary8p4se, RNE_SatNone, x, y)   # explicit ρ is unaffected
+Binary8p4se(Inf ≡ 0x7f)
+```
+
+!!! warning "Changing the default is a global semantic change"
+    Every caller of the convenience forms — including code in other packages —
+    sees it. Library code that needs a specific projection should name it
+    explicitly rather than rely on the session default.
+
+    It also costs specialization. Because the default is mutable, ρ is not a
+    compile-time constant at those call sites, so they dispatch dynamically and
+    allocate (measured: `x + y` 160 bytes, `Exp(x)` and `T(2.1)` 32 bytes each).
+    The explicit forms `Add(T, ρ, x, y)` remain fully specialized and
+    allocation-free — use them in hot code. To consume the default *without*
+    that cost, go through the `with_default_*` combinators below.
 
 To *consume* a default in your own code without paying dynamic-dispatch costs,
 go through the `with_default_*` combinators — `with_default_type`,
@@ -455,6 +482,10 @@ implementations must be acknowledged with an explicit `κ = NaN`. Retrieve with
   `project` ≈ 13 ns, zero allocations). A format type read from a **non-`const`
   global** forces Julia's dynamic dispatch on every call (~1 µs for keyword calls);
   one function barrier `f(::Type{T}, …) where {T}` restores full speed.
+- **Name ρ explicitly in hot code.** The convenience forms (`x + y`, `Exp(x)`,
+  `T(2.1)`) read the mutable session default, so ρ is not statically known there
+  and they allocate. `Add(T, ρ, x, y)` with a `const` ρ is the allocation-free
+  form — that is what the ≈ 18–26 ns figure above measures.
 - **Bulk work belongs in array calls.** The table-gather kernels are ~50× the scalar
   path; the first call per specialization pays a one-time build (≈ 0.4 ms unary,
   tens of ms for 8×8 binary tables, up to a few ms for a 2 MiB ternary table).
