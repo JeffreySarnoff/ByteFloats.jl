@@ -1,11 +1,11 @@
 # Regenerating and reading the benchmark report
 
 <!-- updated by /doc-it -->
-The runnable suite lives in `benchmark/` (its own environment, `benchmark/Project.toml`).
+The runnable suite lives in `benchmarking/` (its own environment, `benchmark/Project.toml`).
 This directory holds the generated artifacts — `benchmark_report.md`/`.pdf`,
 `domain_ops.csv`, `safe_domain_ops.csv` — and this guide. `benchmarking/benchmarking.jl`
 and `benchmarking/simple_benchmarking.jl` are earlier copies kept for reference;
-`benchmark/benchmarking.jl` is the current script.
+`benchmarking/benchmarking.jl` is the current script.
 
 ## Regenerating
 
@@ -13,11 +13,11 @@ From your repository root, it's two commands.
 
 One-time environment setup:
 
-    julia --project=benchmark -e "using Pkg; Pkg.develop(path=\".\"); Pkg.instantiate()"
+    julia --project=benchmarking -e "using Pkg; Pkg.develop(path=\".\"); Pkg.instantiate()"
 
 Then generate the report:
 
-    julia --project=benchmark benchmark/benchmarking.jl benchmarking/benchmark_report.md
+    julia --project=benchmarking benchmarking/benchmarking.jl benchmarking/benchmark_report.md
 
 The trailing argument is the output path — omit it and the report lands at
 benchmark_report.md in the current directory; pass benchmarking/benchmark_report.md
@@ -26,7 +26,7 @@ not exist — the script does not create directories).
 
 From the REPL:
 
-    include("benchmark/benchmarking.jl");
+    include("benchmarking/benchmarking.jl");
     generate_report("benchmarking/benchmark_report.md")
 
 Expect roughly 8–14 minutes and ~280 measurement rows (add two more with

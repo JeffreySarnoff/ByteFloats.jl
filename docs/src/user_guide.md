@@ -584,7 +584,7 @@ implementations must be acknowledged with an explicit `κ = NaN`. Retrieve with
 - **Stochastic array calls** run the scalar pipeline per element; pass an
   explicit `rng` for reproducibility.
 - **Memory:** `PackedVector` for storage; `BlockVector` for many blocks.
-- The reproducible benchmark suite lives at `benchmark/benchmarking.jl` and generates
+- The reproducible benchmark suite lives at `benchmarking/benchmarking.jl` and generates
   a full markdown report for your machine.
 
 ## Environment switches

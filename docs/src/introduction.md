@@ -36,7 +36,7 @@ the position that for value sets this small there is no excuse for approximation
   allocation-free (≈ 18 ns for a complete `Add` including projection); sub-byte packed
   storage, integer-keyed ordering with an O(n) counting sort, and a mask-based rounding
   core round out the performance story. A reproducible Chairmarks benchmark suite ships
-  in `benchmark/`.
+  in `benchmarking/`.
 
 ## Thirty-second tour
 

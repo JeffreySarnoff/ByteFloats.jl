@@ -55,8 +55,8 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 One-time setup, then generate a machine-specific report:
 
 ```
-julia --project=benchmark -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
-julia --project=benchmark benchmark/benchmarking.jl benchmark_report.md
+julia --project=benchmarking -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=benchmarking benchmarking/benchmarking.jl benchmarking/benchmark_report.md
 ```
 
 ## Repository layout
@@ -69,8 +69,8 @@ test/          the consolidated exhaustive suite (runtests.jl) plus the
                independent validation harness (validate_correctness.jl,
                refimpl.jl, ternary_opt.jl)
 docs/          Documenter site (make.jl, builddocs.jl, src/*.md) and docs/pdf/
-benchmark/     Chairmarks suite + report generator (own environment) — current
-benchmarking/  generated report (benchmark_report.md/.pdf), operation-domain
+benchmarking/  Chairmarks suite + report generator (own environment), the
+               generated report (benchmark_report.md/.pdf), operation-domain
                CSVs, and the report-reading guide (README.md)
 Float128FAA/   standalone `faa(x,y,z)` package, vendored as src/faa128.jl
 Float128FMA/   standalone `fma` package for Float128, vendored as src/fma128.jl

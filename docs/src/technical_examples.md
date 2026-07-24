@@ -324,7 +324,7 @@ keep their order under hard-tanh, provably.
 
 ### Benchmarking without measuring the dispatcher
 
-The package's benchmark doctrine, in one snippet (needs the `benchmark/` environment
+The package's benchmark doctrine, in one snippet (needs the `benchmarking/` environment
 for Chairmarks). Format types enter as **type parameters**; operands come from
 Chairmarks' *untimed* `setup`; and if you retrieve functions reflectively
 (`getfield(ByteFloats, op)`), pass them through an argument barrier so they specialize:
@@ -349,6 +349,6 @@ b = bench_add(Binary8p4se)
 !!! warning "The 60× trap"
     The same call with `T` read from a non-`const` global measures ~1 µs — Julia's
     dynamic keyword dispatch, not this package. Two project post-mortems trace to
-    exactly this mistake; the shipped `benchmark/benchmarking.jl` asserts
+    exactly this mistake; the shipped `benchmarking/benchmarking.jl` asserts
     specialization (zero warm-path allocation) before it believes any number, and
     so should yours.

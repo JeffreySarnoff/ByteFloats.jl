@@ -22,8 +22,8 @@ Requires Julia 1.12. Runtime deps: `PrecompileTools`, `Quadmath`, `Random`.
 julia --project=. -e 'using Pkg; Pkg.test()'      # exhaustive suite (~8.9M assertions)
 julia docs/builddocs.jl                            # build docs site locally
 julia --project=docs docs/make.jl                  # docs build with env already set up
-julia --project=benchmark -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
-julia --project=benchmark benchmark/benchmarking.jl benchmarking/benchmark_report.md
+julia --project=benchmarking -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=benchmarking benchmarking/benchmarking.jl benchmarking/benchmark_report.md
 julia --project=docs docs/make_latex.jl            # resolve docs to LaTeX (PDF pipeline stage 1)
 ```
 
@@ -173,17 +173,14 @@ src/           the fourteen layers + the two vendored Float128 modules
 test/          runtests.jl (shipped) + three manual harnesses
 docs/          Documenter site (make.jl, builddocs.jl, src/*.md); make_latex.jl
                + docs/pdf/ (PDF pipeline, build note, generated PDF)
-benchmark/     current Chairmarks suite + report generator (own environment)
-benchmarking/  generated report, domain CSVs, report-reading guide
+benchmarking/  Chairmarks suite + report generator (own environment), the
+               generated report, domain CSVs, report-reading guide
 Float128FAA/   standalone faa(x,y,z) package
 Float128FMA/   standalone Float128 fma package
 ```
 
 ## Known repository gotchas
 
-- **`benchmark/` vs `benchmarking/`.** `benchmark/benchmarking.jl` is the current
-  script; `benchmarking/benchmarking.jl` and `simple_benchmarking.jl` are older
-  copies kept alongside the generated artifacts. Edit the one in `benchmark/`.
 - **Docs deploy from CI only.** [docs/make.jl](docs/make.jl) calls `deploydocs`
   targeting the `gh-pages` branch. Local builds log "could not auto-detect the
   building environment. Skipping deployment" — that warning is expected and

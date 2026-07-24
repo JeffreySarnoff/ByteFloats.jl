@@ -254,7 +254,7 @@ global measures Julia's dispatch machinery, not the code under test — and it d
 keyword call costs ~1 µs; a dynamic positional call far less; six unresolved interior
 sites cost six times one).
 
-The rules the shipped `benchmark/benchmarking.jl` enforces structurally:
+The rules the shipped `benchmarking/benchmarking.jl` enforces structurally:
 
 - format types enter as type parameters, never as globals;
 - operands come from untimed setup;

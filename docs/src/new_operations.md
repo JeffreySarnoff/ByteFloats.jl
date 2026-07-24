@@ -56,7 +56,7 @@ not optional.
    lists where applicable (monotonicity ops, binary exhaustive sweeps). Then
    regenerate the benchmark report — `bench_scalar_ops` iterates the registry
    lists, so your op appears in all four operand-class tables automatically;
-   **add a `_SAFE_DOMAINS` entry** in `benchmark/benchmarking.jl` if the op is
+   **add a `_SAFE_DOMAINS` entry** in `benchmarking/benchmarking.jl` if the op is
    argument-restricted, or the safe-args table will use the oracle-derived
    fallback pool.
 
