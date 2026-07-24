@@ -38,4 +38,6 @@ true
 - **[Adding Operations](@ref)** — how to add new scalar (unary through
   quaternary) and block (scaled, elementwise, reductive) operations with every
   guarantee intact: registry mechanics, ω-semantics duties, worked examples.
-- **[API Reference](@ref)** — docstrings for the documented public surface.
+- **[External Reference](@ref)** — docstrings for the documented public surface.
+- **[Internal Reference](@ref)** — docstrings for the documented unexported
+  machinery.

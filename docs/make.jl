@@ -27,7 +27,8 @@ makedocs(;
         "Technical Guide" => "technical_guide.md",
         "Technical Examples" => "technical_examples.md",
         "Adding Operations" => "new_operations.md",
-        "API Reference" => "reference.md",
+        "External Reference" => "external_reference.md",
+        "Internal Reference" => "internal_reference.md",
     ],
     # The guides intentionally reference some names that carry no docstrings yet
     # (docstring coverage is tracked work); keep those as warnings, not failures.
