@@ -12,6 +12,7 @@ Source files load in dependency order, each layer speaking only downward:
 |---|---|---|
 | formats | `formats.jl` | `Binary{K,P,SGN,EXT}`, the 120 named aliases, Group M queries |
 | specs | `projspec.jl` | rounding/saturation singletons, `ProjSpec{R,S}`, the predefined spec grid |
+| defaults | `defaults.jl` | settable session defaults (`DefaultType`, `DefaultProjection`, …) behind `Ref`s; never consulted by hot paths |
 | codec | `decode_encode.jl` | decode (generated tables + bit-composed compute), encode, order keys, counting sort, `Class`, Next ops |
 | engine | `project.jl` | `round_to_precision` (mask-based Float64 core + generic core), `saturate`, `project`, `project_interval` |
 | ops | `ops_scalar.jl` | result-kind protocol, `apply_op`, the operation registry, both API registers |

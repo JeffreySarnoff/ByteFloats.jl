@@ -221,6 +221,65 @@ Binary8p4se(2.25 ≡ 0x49)     # largest draw: rounds up
 The exact fraction here is 1/8 of an ulp, so over all 256 draws exactly 32 round up —
 `StochasticA` is unbiased in expectation. `R` must lie in `0:2^N-1`.
 
+### Session defaults
+
+Six session-wide defaults are readable as `DefaultX()` and settable as
+`DefaultX!(v)`:
+
+| default | initial value | setter accepts |
+|---|---|---|
+| `DefaultType` | `Binary8p2se` | any fully-parameterized `Binary` type |
+| `DefaultReturnType` | `Binary8p2se` | any fully-parameterized `Binary` type |
+| `DefaultAccumulatorType` | `binary32` (`Float32`) | any `AbstractFloat` type |
+| `DefaultRoundingMode` | `NearestTiesToEven()` | mode instance or type |
+| `DefaultSaturationMode` | `SatNone()` | mode instance or type |
+| `DefaultProjection` | `RNE_SatNone` | a `ProjSpec`, or `(mode, sat)` |
+| `DefaultRNG` | the `Xoshiro` type | RNG type or instance |
+| `DefaultRbits` | `8` | `Int` in `1:60` |
+
+The projection default and its components are kept coherent in both directions:
+setting `DefaultRoundingMode!` or `DefaultSaturationMode!` rebuilds
+`DefaultProjection` around the change, and setting `DefaultProjection!` directly
+decomposes it back into both components — so
+`DefaultProjection() === ProjSpec(DefaultRoundingMode(), DefaultSaturationMode())`
+always holds.
+
+```julia-repl
+julia> DefaultRoundingMode!(TowardZero())
+TowardZero()
+
+julia> DefaultProjection()               # followed the component
+(TowardZero, SatNone)
+
+julia> DefaultProjection!(RNA_SatFinite)
+(NearestTiesToAway, SatFinite)
+
+julia> DefaultRoundingMode(), DefaultSaturationMode()   # followed the projection
+(NearestTiesToAway(), SatFinite())
+```
+
+These are session conveniences for interactive work and code that opts in to
+them. The same-format convenience methods (`a + b`, `Exp(x)`, …) deliberately
+do **not** consult them — those stay pinned to the static `default_projspec`
+(`RNE_SatNone`), so a global cannot silently change the semantics or the
+specialization of compiled hot paths.
+
+To *consume* a default in your own code without paying dynamic-dispatch costs,
+go through the `with_default_*` combinators — `with_default_type`,
+`with_default_returntype`, `with_default_accumulatortype`,
+`with_default_projection` — which call `f(default, args...)`:
+
+```julia-repl
+julia> with_default_type((T, x) -> T(x), 1.5)
+Binary8p2se(1.5 ≡ 0x2e)
+```
+
+While a default still holds its initial value, the combinator's call is
+statically compiled against that constant — zero dispatch, zero allocation
+(pinned in the test suite alongside the other specialization regressions).
+After the default is changed it costs one dynamic dispatch plus one boxed
+return at entry, with everything inside the call fully specialized.
+
 ## Scalar operations: the two registers
 
 **The spec-named register** exposes every draft operation under its draft name with an

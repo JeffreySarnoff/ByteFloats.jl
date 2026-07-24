@@ -33,12 +33,12 @@ trades speed only. CI runs both configurations
 
 ## Architecture
 
-Eleven source layers, included in a fixed order by
+Twelve source layers, included in a fixed order by
 [`src/ByteFloats.jl`](src/ByteFloats.jl):
 
 ```
-formats → projspec → decode_encode → project → ops_scalar → oracle
-        → tables → kernels → blocks → packed → approx
+formats → projspec → defaults → decode_encode → project → ops_scalar
+        → oracle → tables → kernels → blocks → packed → approx
 ```
 
 `ops_scalar` deliberately precedes `oracle` (the evaluation-protocol structs
@@ -49,6 +49,7 @@ in `src/ByteFloats.jl` in sync when adding a layer.**
 |---|---|
 | `formats.jl` | `Binary{K,P,SGN,EXT}` type, Group M traits, format names, Base API |
 | `projspec.jl` | rounding × saturation as zero-size *types* so kernels specialize on ρ |
+| `defaults.jl` | settable session defaults (`DefaultType`, `DefaultProjection`, …); hot paths never consult them |
 | `decode_encode.jl` | ωDecode / ωEncode, ordering keys, `Next*` ops |
 | `project.jl` | the projection engine: ωRoundToPrecision → ωSaturate → ωEncode |
 | `ops_scalar.jl` | `OP_REGISTRY`, `apply_op`, spec + Base register veneers |
@@ -155,7 +156,7 @@ manually:
 ## Repository layout
 
 ```
-src/           the eleven layers + the two vendored Float128 modules
+src/           the twelve layers + the two vendored Float128 modules
 test/          runtests.jl (shipped) + three manual harnesses
 docs/          Documenter site (make.jl, builddocs.jl, src/*.md) and docs/pdf/
 benchmark/     current Chairmarks suite + report generator (own environment)

@@ -68,4 +68,7 @@ end
     # the method the package-wide pass cannot verify, verified where it is called
     JET.@test_call vmap(:Exp, T, RNE_SatNone, pv)
     JET.@test_call vmap(:Exp, T, σ, pv; rng = MersenneTwister(1))
+    # session-default combinators: the fast path must be statically clean
+    JET.@test_call with_default_type((F, x) -> F(x), 1.5)
+    JET.@test_call with_default_projection((ρ, x, y) -> Add(T, ρ, x, y), a, b)
 end

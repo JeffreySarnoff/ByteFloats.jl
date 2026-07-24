@@ -188,7 +188,7 @@ RSC_SatNone() = RSC_SatNone(Val(DEFAULT_RBITS))
 RSC_SatNone(::Val{N}) where {N} = (_check_nrandbits(N); RSC_SatNoneType{N}())
 RSC_SatNone(N::Int) = RSC_SatNone(Val(N))
 
-default_projspec(::Type{<:Binary}) = RNE_SatNone
+default_projspec(::Type{<:Binary}) = DefaultProjection()
 
 # ---- Base.RoundingMode compatibility shim (API boundaries only)
 """

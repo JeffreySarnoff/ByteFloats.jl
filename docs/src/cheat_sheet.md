@@ -166,6 +166,38 @@ nrandbits(σ)                      # 8
 
 For an `N`-bit mode, explicit `R` must be in `0:(2^N - 1)`.
 
+### Session defaults
+
+Read with `DefaultX()`, set with `DefaultX!(v)`:
+
+```julia
+DefaultType()            # Binary8p2se     DefaultType!(Binary8p4se)
+DefaultReturnType()      # Binary8p2se     DefaultReturnType!(Binary8p3se)
+DefaultAccumulatorType() # binary32        DefaultAccumulatorType!(binary64)
+DefaultRoundingMode()    # NearestTiesToEven()
+DefaultSaturationMode()  # SatNone()
+DefaultProjection()      # RNE_SatNone
+DefaultRNG()             # Xoshiro         DefaultRNG!(Xoshiro(42))
+DefaultRbits()           # 8               DefaultRbits!(16)
+```
+
+Setting a rounding/saturation component rebuilds `DefaultProjection`; setting
+`DefaultProjection!` directly updates both components. Always:
+`DefaultProjection() === ProjSpec(DefaultRoundingMode(), DefaultSaturationMode())`.
+
+The convenience methods (`a + b`, `Exp(x)`) do **not** consult these — they stay
+pinned to `RNE_SatNone` via `default_projspec`.
+
+Consume a default via the combinators (zero-cost while unchanged, one dispatch
+after a change) — never by computing on a bare `DefaultX()` read:
+
+```julia
+with_default_type((T, x) -> T(x), 1.5)          # Binary8p2se(1.5 ≡ 0x2e)
+with_default_projection((ρ, x, y) -> Add(T, ρ, x, y), x, y)
+with_default_returntype(f, args...)              # f(DefaultReturnType(), args...)
+with_default_accumulatortype(f, args...)
+```
+
 ## Scalar operation catalog
 
 ```julia

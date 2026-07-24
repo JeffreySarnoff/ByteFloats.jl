@@ -153,6 +153,109 @@ println("parameter validation OK")
 end
 
 # ==========================================================================
+# defaults.jl — session defaults and the projection/component coherence invariant
+# ==========================================================================
+
+@testset "defaults.jl" begin
+    # initial values
+    @test DefaultType() === Binary8p2se
+    @test DefaultReturnType() === Binary8p2se
+    @test DefaultAccumulatorType() === binary32 === Float32
+    @test DefaultRoundingMode() === NearestTiesToEven()
+    @test DefaultSaturationMode() === SatNone()
+    @test DefaultProjection() === RNE_SatNone
+    @test DefaultRNG() === Random.Xoshiro
+    @test DefaultRbits() == 8
+
+    coherent() = DefaultProjection() ===
+                 ProjSpec(DefaultRoundingMode(), DefaultSaturationMode())
+    @test coherent()
+
+    # component setters update the projection
+    @test DefaultRoundingMode!(TowardZero()) === TowardZero()
+    @test DefaultProjection() === RTZ_SatNone
+    @test coherent()
+    @test DefaultSaturationMode!(SatFinite()) === SatFinite()
+    @test DefaultProjection() === RTZ_SatFinite
+    @test DefaultRoundingMode() === TowardZero()        # unchanged by the sat setter
+    @test coherent()
+
+    # type-argument convenience forms
+    DefaultRoundingMode!(NearestTiesToAway)
+    @test DefaultRoundingMode() === NearestTiesToAway()
+    @test DefaultProjection() === RNA_SatFinite
+    DefaultSaturationMode!(SatPropagate)
+    @test DefaultProjection() === RNA_SatPropagate
+    @test coherent()
+
+    # direct projection setter updates both components
+    DefaultProjection!(ProjSpec(StochasticA{8}(), SatNone()))
+    @test DefaultRoundingMode() === StochasticA{8}()
+    @test DefaultSaturationMode() === SatNone()
+    @test coherent()
+    DefaultProjection!(TowardPositive(), SatFinite)     # (mode, sat) convenience
+    @test DefaultProjection() === RTP_SatFinite
+    @test DefaultRoundingMode() === TowardPositive()
+    @test DefaultSaturationMode() === SatFinite()
+    @test coherent()
+
+    # remaining setters, validation, and the RNG instance form
+    @test DefaultType!(Binary5p3sf) === Binary5p3sf
+    @test DefaultType() === Binary5p3sf
+    @test_throws ArgumentError DefaultType!(Binary{8,8,true,true})   # invalid params
+    @test DefaultReturnType!(Binary8p4se) === Binary8p4se
+    @test DefaultReturnType() === Binary8p4se
+    @test DefaultType() === Binary5p3sf                  # independent of the return type
+    @test_throws ArgumentError DefaultReturnType!(Binary{8,8,true,true})
+    @test DefaultAccumulatorType!(binary64) === Float64
+    @test DefaultAccumulatorType() === binary64
+    @test_throws MethodError DefaultAccumulatorType!(Int)   # not an AbstractFloat
+    @test DefaultRbits!(16) == 16
+    @test_throws ArgumentError DefaultRbits!(0)
+    @test_throws ArgumentError DefaultRbits!(61)
+    @test DefaultRbits() == 16                           # failed sets don't stick
+    rng = Random.Xoshiro(42)
+    @test DefaultRNG!(rng) === rng
+    @test DefaultRNG() === rng
+
+    # restore initial state for any later consumer
+    DefaultType!(Binary8p2se)
+    DefaultReturnType!(Binary8p2se)
+    DefaultAccumulatorType!(binary32)
+    DefaultProjection!(RNE_SatNone)
+    DefaultRNG!(Random.Xoshiro)
+    DefaultRbits!(8)
+    @test coherent()
+
+    # ---- consumption combinators: speculative fast path over a barrier
+    mkval(T, x) = T(x)
+    addρ(ρ, x, y) = Add(Binary8p4se, ρ, x, y)
+    a4, b4 = Binary8p4se(1.5), Binary8p4se(0.25)
+
+    # fast path (defaults at initial values): correct, zero-alloc, concretely inferred
+    @test with_default_type(mkval, 1.5) === Binary8p2se(1.5)
+    @test with_default_returntype(mkval, 1.5) === Binary8p2se(1.5)
+    @test with_default_accumulatortype(zero) === 0.0f0
+    @test with_default_projection(addρ, a4, b4) === Add(Binary8p4se, RNE_SatNone, a4, b4)
+    wdt(x) = with_default_type(mkval, x); wdt(1.5)
+    @test @allocated(wdt(1.5)) == 0
+    @test Base.return_types(wdt, Tuple{Float64}) == [Binary8p2se]
+    wdp(x, y) = with_default_projection(addρ, x, y); wdp(a4, b4)
+    @test @allocated(wdp(a4, b4)) == 0
+    @test Base.return_types(wdp, Tuple{Binary8p4se,Binary8p4se}) == [Binary8p4se]
+
+    # slow path (defaults changed): same answers as passing the default explicitly
+    DefaultType!(Binary6p3se)
+    @test with_default_type(mkval, 1.5) === Binary6p3se(1.5)
+    DefaultProjection!(RTZ_SatFinite)
+    @test with_default_projection(addρ, a4, b4) === Add(Binary8p4se, RTZ_SatFinite, a4, b4)
+    DefaultAccumulatorType!(binary64)
+    @test with_default_accumulatortype(zero) === 0.0
+    DefaultType!(Binary8p2se); DefaultProjection!(RNE_SatNone); DefaultAccumulatorType!(binary32)
+    @test coherent()
+end
+
+# ==========================================================================
 # decode_encode.jl
 # ==========================================================================
 allfmts = DataType[]

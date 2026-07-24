@@ -25,6 +25,10 @@ allocation) as deterministic regressions.
 """
 module ByteFloats
 
+const binary16 = Float16
+const binary32 = Float32
+const binary64 = Float64
+
 using Random: Random, AbstractRNG, default_rng
 using PrecompileTools: @setup_workload, @compile_workload
 using Quadmath: Float128
@@ -35,13 +39,14 @@ using .Float128FMA          # on Windows this installs Base.fma
 include("faa128.jl")
 using .Float128FAA          
 
-# Include order: formats → projspec → decode_encode → project → ops_scalar →
-# oracle → tables → kernels → blocks → packed → approx.
+# Include order: formats → projspec → defaults → decode_encode → project →
+# ops_scalar → oracle → tables → kernels → blocks → packed → approx.
 # (One deliberate delta from the architecture §11 listing: the evaluation-protocol
 # structs BigExactF/EncloseF live in ops_scalar.jl per §6, so ops_scalar precedes
 # oracle; oracle's references to them are function-body-late-bound either way, but
 # this is the order the harnesses verified.)
 include("formats.jl")
+include("defaults.jl")
 include("projspec.jl")
 include("decode_encode.jl")
 include("project.jl")
@@ -61,6 +66,8 @@ export Binary
 for n in sort!(collect(keys(_NAMED)))
     @eval export $n
 end
+
+export binary64, binary32, binary16
 
 # Group M and format introspection
 export bitwidth, issigned, isextended, expbias, expbitwidth, trailingsigbits,
@@ -85,6 +92,18 @@ export RoundingMode3109, NearestTiesToEven, NearestTiesToAway, TowardPositive,
        RSB_SatFinite, RSB_SatPropagate, RSB_SatNone,
        RSC_SatFinite, RSC_SatPropagate, RSC_SatNone,
        default_projspec, projmode
+
+# session defaults (defaults.jl)
+export DefaultType, DefaultType!,
+       DefaultReturnType, DefaultReturnType!,
+       DefaultAccumulatorType, DefaultAccumulatorType!,
+       DefaultRoundingMode, DefaultRoundingMode!,
+       DefaultSaturationMode, DefaultSaturationMode!,
+       DefaultProjection, DefaultProjection!,
+       DefaultRNG, DefaultRNG!,
+       DefaultRbits, DefaultRbits!,
+       with_default_type, with_default_returntype,
+       with_default_accumulatortype, with_default_projection
 
 # comparison, classification, stepping (Groups D/M)
 export TotalOrder, Class, FPClass,
