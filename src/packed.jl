@@ -82,6 +82,17 @@ on packed words directly — the deliberate compute-unpacked/store-packed bounda
 """
 function vmap(op::Symbol, fr::Type{<:Binary}, ρ::ProjSpec, pv::PackedVector{F};
               rng::MaybeRNG=nothing) where {F<:Binary}
+    _vmap_packed(op, fr, ρ, pv, rng)
+end
+
+# Function barrier (module docstring's specialization rule): with the result
+# format as a type parameter the tile loop specializes, so `out` is a concrete
+# Vector and the views reach the `vmap!` methods statically. JET's *package*
+# analysis still reports this method — it widens correlated type parameters, so
+# it sees `SubArray{Any}` where a specialized call has `SubArray{fr}`; the
+# concrete-call gate in test/quality.jl is what verifies the real path.
+function _vmap_packed(op::Symbol, ::Type{fr}, ρ::ProjSpec, pv::PackedVector{F},
+                      rng::MaybeRNG) where {fr<:Binary,F<:Binary}
     out = Vector{fr}(undef, pv.n)
     isempty(pv) && return out
     buf = Vector{F}(undef, _PACK_TILE)

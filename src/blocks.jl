@@ -27,11 +27,15 @@ format `FE` (draft §5). `isbits`; blocks live in registers/stack.
 struct Block{B,FS<:Binary,FE<:Binary}
     s::FS
     x::NTuple{B,FE}
-    function Block(s::FS, x::NTuple{B,FE}) where {B,FS<:Binary,FE<:Binary}
-        B >= 1 || throw(ArgumentError("block size B must be ≥ 1"))
-        new{B,FS,FE}(s, x)
+    # The element type is spelled out on the first lane rather than as
+    # `NTuple{B,FE}`: an empty tuple would leave FE unbound (Aqua's unbound-type-
+    # parameter gate). B ≥ 1 is therefore a signature property, and the empty
+    # case falls to the explicit method below.
+    function Block(s::FS, x::Tuple{FE,Vararg{FE,Bm1}}) where {Bm1,FS<:Binary,FE<:Binary}
+        new{Bm1 + 1,FS,FE}(s, x)
     end
 end
+Block(::Binary, ::Tuple{}) = throw(ArgumentError("block size B must be ≥ 1"))
 Block(s::Binary, xs::Binary...) = Block(s, xs)
 blocksize(::Block{B}) where {B} = B
 scaleformat(::Block{B,FS,FE}) where {B,FS,FE} = FS
