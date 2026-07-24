@@ -24,6 +24,7 @@ makedocs(;
         "Cheat Sheet" => "cheat_sheet.md",
         "User Guide" => "user_guide.md",
         "User Examples" => "user_examples.md",
+        "Julia Compatibility" => "julia_compatibility.md",
         "Technical Guide" => "technical_guide.md",
         "Technical Examples" => "technical_examples.md",
         "Adding Operations" => "new_operations.md",

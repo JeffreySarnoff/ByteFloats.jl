@@ -29,6 +29,8 @@ true
   blocks, packed storage, conformance and κ, performance guidance.
 - **[User Examples](@ref)** — runnable examples in three tiers: basic, machine
   learning, deep learning.
+- **[Julia Compatibility](@ref)** — the Base register: which Base functions work
+  on `Binary` values, what they map to, and what deliberately isn't mapped.
 - **[Technical Guide](@ref)** — internals: the encoding and projection engine, the
   oracle's rigor classes, tables and kernels, the block layer's exactness filters,
   the verification and benchmark doctrines.
