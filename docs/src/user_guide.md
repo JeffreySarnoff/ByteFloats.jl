@@ -128,37 +128,88 @@ ClassPosNormal::FPClass = 0x06
 
 ### Random values
 
-The Random API works on every format. `rand` draws the real uniform on [0, 1)
-at Float64 and floor-projects it onto the format's grid, so each code point
-receives exactly the real measure of its interval; results are always in
-[0, 1). `randn` projects a standard-normal Float64 draw round-to-nearest with
-`SatFinite`, so tail draws beyond `MaxFiniteOf(T)` clamp to the extremal finite
-datum — `randn` never returns ±Inf or NaN. `randn` requires a signed format
-(an unsigned format cannot represent negative draws and throws).
+The Random API works on every format, in every setup Julia programmers expect.
+
+**What the draws mean.** `rand` draws the real uniform on [0, 1) at Float64 and
+floor-projects it onto the format's grid, so each code point receives exactly
+the real measure of its interval; results are always in [0, 1). `randn`
+projects a standard-normal Float64 draw round-to-nearest with `SatFinite`, so
+tail draws beyond `MaxFiniteOf(T)` clamp to the extremal finite datum — `randn`
+never returns ±Inf or NaN, which matters for tiny-range formats (`Binary3p1se`
+has `MaxFinite = 1.0`). `randn` requires a signed format; an unsigned format
+throws:
+
+```julia-repl
+julia> randn(Binary6p3ue)
+ERROR: ArgumentError: randn requires a signed format; Binary6p3ue cannot represent negative draws
+```
+
+**Setup 1 — quick and implicit.** No rng argument: draws come from Julia's
+task-local default generator (a `Xoshiro`), and `Random.seed!` controls them
+exactly as for any other type:
+
+```julia-repl
+julia> Random.seed!(1234); rand(Binary8p4se)
+Binary8p4se(0.3125 ≡ 0x32)
+
+julia> Random.seed!(1234); rand(Binary8p4se)      # same seed, same draw
+Binary8p4se(0.3125 ≡ 0x32)
+```
+
+**Setup 2 — an explicit rng stream.** Pass any `AbstractRNG` first, for
+reproducible streams independent of global state:
 
 ```julia-repl
 julia> rand(Xoshiro(1), Binary8p4se)
 Binary8p4se(0.0703125 ≡ 0x21)
 
-julia> randn(Xoshiro(1), Binary8p4se, 3)
-3-element Vector{Binary8p4se}:
- Binary8p4se(-0.0703125 ≡ 0xa1)
-    Binary8p4se(0.5625 ≡ 0x39)
-  Binary8p4se(-0.8125 ≡ 0xbd)
+julia> rand(Xoshiro(8), Binary8p4se, 4)
+4-element Vector{Binary8p4se}:
+   Binary8p4se(0.40625 ≡ 0x35)
+ Binary8p4se(0.021484375 ≡ 0x13)
+      Binary8p4se(0.75 ≡ 0x3c)
+   Binary8p4se(0.28125 ≡ 0x31)
 ```
 
-All derived forms work — `rand(T, dims)`, `rand!(A)`, `randn(T, dims)`,
-`randn!(A)`, with or without an explicit rng. The rng-less forms use Julia's
-task-local default generator (a `Xoshiro`), so `Random.seed!` controls them as
-usual.
+**Setup 3 — arrays and in-place.** `rand(T, dims...)` / `randn(T, dims...)`
+build `Array{T}`; `rand!(A)` / `randn!(A)` fill an existing array (one byte per
+element — cheap to preallocate and reuse):
 
-The scalar `::Type` forms take a `projection` keyword to land the draw under any
-`ProjSpec` — `rand(rng, T; projection = RTP_SatNone)`,
-`randn(rng, T; projection = RTZ_SatFinite)`. A stochastic projection draws its
-random bits from the same rng, so seeded streams stay reproducible. The defaults
-are the contract-keepers (floor for `rand`, nearest + `SatFinite` for `randn`);
-opting out can produce `1.0` from `rand` or ±Inf/NaN from `randn`. Worked
-transcripts: [User Examples](@ref).
+```julia-repl
+julia> A = Vector{Binary8p4se}(undef, 3); randn!(Xoshiro(2), A)
+3-element Vector{Binary8p4se}:
+ Binary8p4se(-0.005859375 ≡ 0x86)
+        Binary8p4se(1.75 ≡ 0x46)
+        Binary8p4se(-1.0 ≡ 0xc0)
+
+julia> randn(Xoshiro(3), Binary8p4se, 2, 3) |> typeof
+Matrix{Binary8p4se}
+```
+
+Feed array draws straight into the storage layers when that is the goal:
+`PackedVector(rand(Binary4p2se, n))`.
+
+**Setup 4 — choosing the projection.** The scalar `::Type` forms take a
+`projection` keyword to land the draw under any `ProjSpec`:
+
+```julia-repl
+julia> rand(Xoshiro(2), Binary8p4se; projection = RTP_SatNone)    # ceiling
+Binary8p4se(0.0029296875 ≡ 0x03)
+
+julia> randn(Xoshiro(6), Binary8p4se; projection = RTZ_SatFinite) # toward zero
+Binary8p4se(-1.875 ≡ 0xc7)
+
+julia> rand(Xoshiro(4), Binary8p4se; projection = RSA_SatNone(8)) # stochastic
+Binary8p4se(0.8125 ≡ 0x3d)
+```
+
+A stochastic projection draws its random bits from the *same* rng, so seeded
+streams stay reproducible. The defaults are the contract-keepers (floor for
+`rand`, nearest + `SatFinite` for `randn`); opting out can produce `1.0` from
+`rand` or ±Inf/NaN from `randn`. The array and `!` forms always use the
+defaults — for arrays under another projection, draw scalars:
+`[rand(rng, T; projection = ρ) for _ in 1:n]`. Worked transcripts, including
+the K = 3 tail-clamp comparison: [User Examples](@ref).
 
 ## Projection specifications
 
