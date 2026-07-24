@@ -91,9 +91,15 @@ no negative zero, and `Float64` serves as the exact interchange carrier for all 
 
 ## Installation
 
+The package is not yet registered, so install it by URL:
+
 ```julia
-pkg> dev path/to/ByteFloats.jl    # from source (the package is not yet registered)
+pkg> add https://github.com/JeffreySarnoff/ByteFloats.jl
 ```
+
+Append `#main` (or a tag/commit) to pin a revision. For an editable install,
+`pkg> dev https://github.com/JeffreySarnoff/ByteFloats.jl` clones into
+`~/.julia/dev`, or `pkg> dev path/to/ByteFloats.jl` uses an existing clone.
 
 Requires Julia 1.12. `Quadmath` (libquadmath's `Float128`) is a hard dependency used
 only inside the oracle and exact-fallback paths; on platforms where it misbehaves,

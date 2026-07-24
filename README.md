@@ -32,6 +32,14 @@ Add(Binary8p4se, σ, Binary8p4se(2.0), Binary8p4se(0.03125); R = 255)
 Exp(Binary8p4se, RNE_SatNone, Binary8p4se.(randn(1000)))   # table-gather kernel
 ```
 
+## Installation
+
+Not yet registered — install by URL:
+
+```julia
+pkg> add https://github.com/JeffreySarnoff/ByteFloats.jl
+```
+
 ## Documentation
 
 <!-- updated by /doc-it -->
