@@ -76,6 +76,15 @@ MinNormalOf(T)
 MaxSubnormalOf(T)
 ```
 
+Every query above also takes a **value** instead of a type — `bitwidth(x)` ≡
+`bitwidth(typeof(x))` — and folds to the same constant:
+
+```julia
+x = Binary8p4se(1.6)
+bitwidth(x)       # 8
+MaxFiniteOf(x)    # Binary8p4se(224.0 ≡ 0x7e)
+```
+
 ## Values and code points
 
 ```julia

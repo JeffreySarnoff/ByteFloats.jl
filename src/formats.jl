@@ -115,6 +115,18 @@ end
 maxfinite_datum(T::Type{<:Binary}) = decode(MaxFiniteOf(T))
 minfinite_datum(T::Type{<:Binary}) = decode(MinFiniteOf(T))
 
+# ---- Value-argument forwarders for Group M and the extremal queries.
+# The answer is a pure function of the type parameters, so a value carries it:
+# `BitwidthOf(x)` ≡ `BitwidthOf(typeof(x))`. Restricted to `Binary` — a `where {T}`
+# signature would claim every type in the language. Constant-folds to the same
+# literal as the type-argument form.
+for f in (:bitwidth, :issigned, :isextended, :expbias, :expbitwidth, :trailingsigbits,
+          :MaxFiniteOf, :MinFiniteOf, :MinPositiveOf, :MaxSubnormalOf, :MinNormalOf)
+    @eval @inline $f(x::Binary) = $f(typeof(x))
+end
+# `PrecisionOf` aliases `Base.precision`, so its forwarder must be spelled out.
+@inline Base.precision(x::Binary) = precision(typeof(x))
+
 # ---- Naming grid, draft §3.2: BinaryKpP + s|u + e|f
 const _NAMED = Dict{Symbol,DataType}()
 for K in 3:8, P in 1:K, S in (true, false), E in (true, false)

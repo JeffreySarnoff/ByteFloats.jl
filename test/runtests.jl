@@ -91,6 +91,28 @@ nfmt = Ref(0); nchecked = Ref(0)
     end
 end
 println("formats verified: $(nfmt[]) formats, $(nchecked[]) code points, all exhaustive")
+
+# Group M and the extremal queries also take a value; the value form must agree
+# with the type form on every format and stay allocation-free.
+@testset "Group M value forwarders" begin
+    for K in 3:8, P in 1:K, S in (true,false), E in (true,false)
+        S && P >= K && continue
+        T = Binary{K,P,S,E}
+        v = rawvalue(T, 0x01)
+        for F in (BitwidthOf, PrecisionOf, SignednessOf, DomainOf, ExponentBiasOf,
+                  ExponentBitwidthOf, TrailingSignificandBitwidthOf,
+                  MaxFiniteOf, MinFiniteOf, MinPositiveOf, MaxSubnormalOf, MinNormalOf)
+            @test F(v) === F(T)
+        end
+    end
+    vb = Binary8p4se(1.5)
+    fw(x) = BitwidthOf(x); fw(vb)
+    @test @allocated(fw(vb)) == 0
+    @test Base.return_types(fw, Tuple{Binary8p4se}) == [Int]
+    mx(x) = MaxFiniteOf(x); mx(vb)
+    @test @allocated(mx(vb)) == 0
+    @test Base.return_types(mx, Tuple{Binary8p4se}) == [Binary8p4se]
+end
 println(Binary8p4se, "  ", Binary8p4se(2.0), "  ", formatname(Binary8p1uf))
 @test Binary8p4se === Binary{8,4,true,true}
 @test_throws ArgumentError Binary{9,4,true,true}(Val(:code), 0x00)

@@ -38,6 +38,20 @@ Also available: `MinFiniteOf`, `MinNormalOf`, `MaxSubnormalOf`, `expbitwidth`,
 `trailingsigbits`, `issigned`, `isextended`, and the draft-named forms
 (`BitwidthOf`, `PrecisionOf`, `ExponentBiasOf`, …).
 
+Each of these accepts a **value** as well as a type — the answer is a pure
+function of the format's type parameters, so `bitwidth(x)` and
+`bitwidth(typeof(x))` are the same query and both fold to a literal:
+
+```julia-repl
+julia> x = Binary8p4se(1.6);
+
+julia> BitwidthOf(x), PrecisionOf(x), SignednessOf(x), DomainOf(x)
+(8, 4, true, true)
+
+julia> MaxFiniteOf(x)
+Binary8p4se(224.0 ≡ 0x7e)
+```
+
 ## Values
 
 A value is one byte: an immutable wrapper around its code point. Four ways in, two
