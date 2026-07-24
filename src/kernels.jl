@@ -87,7 +87,7 @@ function vmap!(dest::AbstractArray{FR}, ::Val{op}, ::Type{FR}, ρ::ProjSpec,
         end
         return dest
     end
-    rr = rng === nothing ? default_rng() : rng
+    rr = _resolve_rng(rng)
     @inbounds for i in eachindex(dest, A, B, C)
         R = _drawR(ρ, rr, nothing)
         dest[i] = apply_op(Val(op), FR, ρ, R, decode(A[i]), decode(B[i]), decode(C[i]))
@@ -96,7 +96,7 @@ function vmap!(dest::AbstractArray{FR}, ::Val{op}, ::Type{FR}, ρ::ProjSpec,
 end
 function _vmap_scalar!(dest, ::Val{op}, ::Type{FR}, ρ::ProjSpec, A;
                        rng::MaybeRNG=nothing) where {op,FR<:Binary}
-    rr = isstochastic(ρ) ? (rng === nothing ? default_rng() : rng) : nothing  # hoisted resolve
+    rr = _rng_for(ρ, rng)                       # hoisted: resolved once per call
     @inbounds for i in eachindex(dest, A)
         dest[i] = apply_op(Val(op), FR, ρ, _drawR(ρ, rr, nothing), decode(A[i]))
     end
@@ -104,7 +104,7 @@ function _vmap_scalar!(dest, ::Val{op}, ::Type{FR}, ρ::ProjSpec, A;
 end
 function _vmap_scalar!(dest, ::Val{op}, ::Type{FR}, ρ::ProjSpec, A, B;
                        rng::MaybeRNG=nothing) where {op,FR<:Binary}
-    rr = isstochastic(ρ) ? (rng === nothing ? default_rng() : rng) : nothing
+    rr = _rng_for(ρ, rng)
     @inbounds for i in eachindex(dest, A, B)
         dest[i] = apply_op(Val(op), FR, ρ, _drawR(ρ, rr, nothing), decode(A[i]), decode(B[i]))
     end

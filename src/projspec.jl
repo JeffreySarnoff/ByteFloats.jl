@@ -140,53 +140,23 @@ const RTO_SatNone      = ProjSpec{ToOdd, SatNone}()
 """Default random-bit budget used by no-argument stochastic projection constructors."""
 const DEFAULT_RBITS = 8
 
-const RSA_SatFiniteType    = ProjSpec{StochasticA{N}, SatFinite} where {N}
-const RSA_SatPropagateType = ProjSpec{StochasticA{N}, SatPropagate} where {N}
-const RSA_SatNoneType      = ProjSpec{StochasticA{N}, SatNone} where {N}
+# The nine stochastic (variant × saturation) constructor families were 27 hand-
+# written methods differing only in two names. Generated from the grid instead,
+# so a change to the constructor protocol — validation, the no-argument budget,
+# the Val route — happens once and cannot apply unevenly across the nine.
+# Names are unchanged: `RSA_SatNone`, `RSA_SatNoneType`, …
+for (tag, mode) in ((:RSA, :StochasticA), (:RSB, :StochasticB), (:RSC, :StochasticC)),
+    sat in (:SatFinite, :SatPropagate, :SatNone)
 
-RSA_SatFinite() = RSA_SatFinite(Val(DEFAULT_RBITS))
-RSA_SatFinite(::Val{N}) where {N} = (_check_nrandbits(N); RSA_SatFiniteType{N}())
-RSA_SatFinite(N::Int) = RSA_SatFinite(Val(N))
-
-RSA_SatPropagate() = RSA_SatPropagate(Val(DEFAULT_RBITS))
-RSA_SatPropagate(::Val{N}) where {N} = (_check_nrandbits(N); RSA_SatPropagateType{N}())
-RSA_SatPropagate(N::Int) = RSA_SatPropagate(Val(N))
-
-RSA_SatNone() = RSA_SatNone(Val(DEFAULT_RBITS))
-RSA_SatNone(::Val{N}) where {N} = (_check_nrandbits(N); RSA_SatNoneType{N}())
-RSA_SatNone(N::Int) = RSA_SatNone(Val(N))
-
-const RSB_SatFiniteType    = ProjSpec{StochasticB{N}, SatFinite} where {N}
-const RSB_SatPropagateType = ProjSpec{StochasticB{N}, SatPropagate} where {N}
-const RSB_SatNoneType      = ProjSpec{StochasticB{N}, SatNone} where {N}
-
-RSB_SatFinite() = RSB_SatFinite(Val(DEFAULT_RBITS))
-RSB_SatFinite(::Val{N}) where {N} = (_check_nrandbits(N); RSB_SatFiniteType{N}())
-RSB_SatFinite(N::Int) = RSB_SatFinite(Val(N))
-
-RSB_SatPropagate() = RSB_SatPropagate(Val(DEFAULT_RBITS))
-RSB_SatPropagate(::Val{N}) where {N} = (_check_nrandbits(N); RSB_SatPropagateType{N}())
-RSB_SatPropagate(N::Int) = RSB_SatPropagate(Val(N))
-
-RSB_SatNone() = RSB_SatNone(Val(DEFAULT_RBITS))
-RSB_SatNone(::Val{N}) where {N} = (_check_nrandbits(N); RSB_SatNoneType{N}())
-RSB_SatNone(N::Int) = RSB_SatNone(Val(N))
-
-const RSC_SatFiniteType    = ProjSpec{StochasticC{N}, SatFinite} where {N}
-const RSC_SatPropagateType = ProjSpec{StochasticC{N}, SatPropagate} where {N}
-const RSC_SatNoneType      = ProjSpec{StochasticC{N}, SatNone} where {N}
-
-RSC_SatFinite() = RSC_SatFinite(Val(DEFAULT_RBITS))
-RSC_SatFinite(::Val{N}) where {N} = (_check_nrandbits(N); RSC_SatFiniteType{N}())
-RSC_SatFinite(N::Int) = RSC_SatFinite(Val(N))
-
-RSC_SatPropagate() = RSC_SatPropagate(Val(DEFAULT_RBITS))
-RSC_SatPropagate(::Val{N}) where {N} = (_check_nrandbits(N); RSC_SatPropagateType{N}())
-RSC_SatPropagate(N::Int) = RSC_SatPropagate(Val(N))
-
-RSC_SatNone() = RSC_SatNone(Val(DEFAULT_RBITS))
-RSC_SatNone(::Val{N}) where {N} = (_check_nrandbits(N); RSC_SatNoneType{N}())
-RSC_SatNone(N::Int) = RSC_SatNone(Val(N))
+    ctor  = Symbol(tag, :_, sat)
+    alias = Symbol(ctor, :Type)
+    @eval begin
+        const $alias = ProjSpec{$mode{N}, $sat} where {N}
+        $ctor() = $ctor(Val(DEFAULT_RBITS))
+        $ctor(::Val{N}) where {N} = (_check_nrandbits(N); $alias{N}())
+        $ctor(N::Int) = $ctor(Val(N))
+    end
+end
 
 default_projspec(::Type{<:Binary}) = DefaultProjection()
 

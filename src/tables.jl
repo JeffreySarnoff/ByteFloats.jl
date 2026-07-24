@@ -121,23 +121,30 @@ once per array operation and index the returned table in their hot loop.
 """
 function get_table end
 
+"""Stochastic ρ is a distribution over R, never a table (design §5.4)."""
+@inline _check_tabulable(ρ::ProjSpec) =
+    isstochastic(ρ) && throw(ArgumentError("stochastic ρ $ρ is not tabulable (design §5.4)"))
+
 # Double-checked pattern: probe under lock, build OUTSIDE the lock (builds may run
 # MPFR escalations), insert under lock; a racing duplicate build is benign and rare.
-@noinline function get_table(op::Symbol, fr::Type{<:Binary}, f1::Type{<:Binary}, ρ::ProjSpec)::Memory{UInt8}
-    isstochastic(ρ) && throw(ArgumentError("stochastic ρ $ρ is not tabulable (design §5.4)"))
-    key = TableKey(op, _fkey(fr), _fkey(f1), (0, 0, 0, 0), _rmname(ρ), _smname(ρ))
+# Written once here so the unary and binary fetches cannot acquire the lock, probe,
+# or insert differently from one another.
+function _cached_table(key::TableKey, build::F)::Memory{UInt8} where {F}
     t = lock(() -> get(TABLE_CACHE, key, nothing), TABLE_LOCK)
     t !== nothing && return t
-    built = _build_unary(op, fr, f1, ρ)
+    built = build()
     lock(() -> get!(TABLE_CACHE, key, built), TABLE_LOCK)
 end
+
+@noinline function get_table(op::Symbol, fr::Type{<:Binary}, f1::Type{<:Binary}, ρ::ProjSpec)::Memory{UInt8}
+    _check_tabulable(ρ)
+    key = TableKey(op, _fkey(fr), _fkey(f1), (0, 0, 0, 0), _rmname(ρ), _smname(ρ))
+    _cached_table(key, () -> _build_unary(op, fr, f1, ρ))
+end
 @noinline function get_table(op::Symbol, fr::Type{<:Binary}, f1::Type{<:Binary}, f2::Type{<:Binary}, ρ::ProjSpec)::Memory{UInt8}
-    isstochastic(ρ) && throw(ArgumentError("stochastic ρ $ρ is not tabulable (design §5.4)"))
+    _check_tabulable(ρ)
     key = TableKey(op, _fkey(fr), _fkey(f1), _fkey(f2), _rmname(ρ), _smname(ρ))
-    t = lock(() -> get(TABLE_CACHE, key, nothing), TABLE_LOCK)
-    t !== nothing && return t
-    built = _build_binary(op, fr, f1, f2, ρ)
-    lock(() -> get!(TABLE_CACHE, key, built), TABLE_LOCK)
+    _cached_table(key, () -> _build_binary(op, fr, f1, f2, ρ))
 end
 
 # ---- ternary build / fetch / policy ------------------------------------------
@@ -164,6 +171,15 @@ end
 _tkey(op::Symbol, fr, f1, f2, f3, ρ::ProjSpec) =
     TernaryKey(op, _fkey(fr), _fkey(f1), _fkey(f2), _fkey(f3), _rmname(ρ), _smname(ρ))
 
+# Cache probe that also refreshes the LRU stamp — a hit must always count as a
+# use, so both the direct fetch and the adaptive gate go through this one path.
+function _ternary_probe(key::TernaryKey)
+    lock(TABLE_LOCK) do
+        e = get(TERNARY_CACHE, key, nothing)
+        e === nothing ? nothing : (e.tick = (TERNARY_TICK[] += 1); e.tbl)
+    end
+end
+
 # Insert under the byte budget, evicting least-recently-used ternary tables first.
 # The new table is always inserted (even if alone it exceeds the budget: the caller
 # earned it; the budget then simply holds this one table).
@@ -189,12 +205,9 @@ point. Builds unconditionally (policy lives in `_ternary_table_for`); pure ρ on
 """
 @noinline function get_table(op::Symbol, fr::Type{<:Binary}, f1::Type{<:Binary},
                              f2::Type{<:Binary}, f3::Type{<:Binary}, ρ::ProjSpec)::Memory{UInt8}
-    isstochastic(ρ) && throw(ArgumentError("stochastic ρ $ρ is not tabulable (design §5.4)"))
+    _check_tabulable(ρ)
     key = _tkey(op, fr, f1, f2, f3, ρ)
-    t = lock(TABLE_LOCK) do
-        e = get(TERNARY_CACHE, key, nothing)
-        e === nothing ? nothing : (e.tick = (TERNARY_TICK[] += 1); e.tbl)
-    end
+    t = _ternary_probe(key)
     t !== nothing && return t
     _ternary_insert!(key, _build_ternary(op, fr, f1, f2, f3, ρ))   # build outside the lock
 end
@@ -217,10 +230,7 @@ always `nothing` — the compute kernel is the right tradeoff there.
     SB <= TERNARY_EAGER_BITS[] && return get_table(op, fr, f1, f2, f3, ρ)
     SB <= TERNARY_ADAPTIVE_BITS[] || return nothing
     key = _tkey(op, fr, f1, f2, f3, ρ)
-    hit = lock(TABLE_LOCK) do
-        e = get(TERNARY_CACHE, key, nothing)
-        e === nothing ? nothing : (e.tick = (TERNARY_TICK[] += 1); e.tbl)
-    end
+    hit = _ternary_probe(key)
     hit !== nothing && return hit
     n = lock(() -> (TERNARY_USE[key] = get(TERNARY_USE, key, 0) + nelems), TABLE_LOCK)
     n >= TERNARY_BUILD_ELEMS[] || return nothing

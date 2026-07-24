@@ -3,23 +3,24 @@
 # Computational ωDecode: the ground truth from which the lookup table below is
 # generated. Kept private; `decode` (the exported entry) reads the table.
 @inline function _decode_compute(v::Binary{K,P,SGN,EXT})::Float64 where {K,P,SGN,EXT}
+    F = Binary{K,P,SGN,EXT}
     c = codepoint(v)
-    if SGN
-        c == UInt8(1 << (K - 1)) && return NaN
-        if EXT
-            c == UInt8((1 << (K - 1)) - 1) && return Inf
-            c == UInt8((1 << K) - 1) && return -Inf
-        end
-    else
-        c == UInt8((1 << K) - 1) && return NaN
-        EXT && c == UInt8((1 << K) - 2) && return Inf
+    # Special code points come from formats.jl rather than being re-derived here:
+    # one definition of the layout, not two. (Unsigned formats put NaN and the
+    # −Inf slot at the same code, so NaN must be tested first — it is.)
+    c == nan_code(F) && return NaN
+    if EXT
+        c == posinf_code(F) && return Inf
+        SGN && c == neginf_code(F) && return -Inf
     end
-    neg = SGN && (c >= UInt8(1 << (K - 1)))
-    m = neg ? c - UInt8(1 << (K - 1)) : c
-    T = m & UInt8((1 << (P - 1)) - 1)
+    hidden = 1 << (P - 1)                      # implicit-bit weight of the integer significand
+    tmask = UInt8(hidden - 1)                  # trailing-significand mask
+    neg = SGN && (c >= signmask(F))
+    m = neg ? c - signmask(F) : c
+    tsig = m & tmask
     Eb = Int(m >> (P - 1))
-    B = SGN ? (1 << (K - P - 1)) : (1 << (K - P))
-    sig = Eb == 0 ? Int(T) : Int(T) + (1 << (P - 1))
+    B = expbias(F)
+    sig = Eb == 0 ? Int(tsig) : Int(tsig) + hidden
     e = (Eb == 0 ? 1 : Eb) - B + (1 - P)
     # bit assembly (bitops plan K2): every datum exponent is deep inside Float64's
     # normal range (|e + nb − 1| ≤ ~260), so no subnormal/overflow cases exist and
@@ -50,8 +51,6 @@ construction and asserted equivalent exhaustively; constant inputs still fold.
 @inline decode(v::Binary{K,P,SGN,EXT}) where {K,P,SGN,EXT} =
     @inbounds _decode_table(Binary{K,P,SGN,EXT})[Int(codepoint(v)) + 1]
 
-
-
 """
     encode(T, sign, S, Q) -> UInt8   (private; design §3.3)
 
@@ -60,36 +59,37 @@ construction and asserted equivalent exhaustively; constant inputs still fold.
 is in the datum set of `T` (guaranteed by RoundToPrecision ∘ Saturate).
 """
 @inline function encode(::Type{Binary{K,P,SGN,EXT}}, sign::Int, S::Int64, Q::Int64) where {K,P,SGN,EXT}
+    F = Binary{K,P,SGN,EXT}
     S == 0 && return 0x00
+    hidden = Int64(1) << (P - 1)               # implicit-bit weight; also the first normal S
     if S == (Int64(1) << P)                    # carry into next binade
-        S = Int64(1) << (P - 1); Q += 1
+        S = hidden; Q += 1
     end
-    B = SGN ? (1 << (K - P - 1)) : (1 << (K - P))
     local c::UInt8
-    if S < (Int64(1) << (P - 1))               # subnormal: Q must equal 2-B-P
+    if S < hidden                              # subnormal: Q must equal 2-B-P
         c = UInt8(S)
     else
-        E = Int(Q) + P - 1
-        Eb = E + B
-        c = UInt8((S & ((Int64(1) << (P - 1)) - 1)) + (Int64(Eb) << (P - 1)))
+        Eb = Int(Q) + P - 1 + expbias(F)       # biased exponent field
+        c = UInt8((S & (hidden - 1)) + (Int64(Eb) << (P - 1)))
     end
-    (SGN && sign < 0) && (c |= UInt8(1 << (K - 1)))
+    (SGN && sign < 0) && (c |= signmask(F))
     c
 end
 
 # ---- Total-order key (design §3.1): sign–magnitude → monotone unsigned key.
 # NaN (at the −0 slot for signed formats / top code for unsigned) sorts ABOVE +Inf
 # [interpretation; draft §4.12.1 text unavailable in upload — see checkpoint].
+
+"""The order key reserved for the single NaN — above every finite key and ±Inf."""
+const NAN_ORDER_KEY = typemax(UInt16)
+
 @inline function order_key(v::Binary{K,P,SGN,EXT}) where {K,P,SGN,EXT}
     c = codepoint(v)
-    isnan(v) && return typemax(UInt16)
-    if SGN
-        neg = c >= UInt8(1 << (K - 1))
-        return neg ? UInt16((1 << (K - 1))) - UInt16(c - UInt8(1 << (K - 1))) :
-                     UInt16(1 << (K - 1)) + UInt16(c) + UInt16(1)
-    else
-        return UInt16(c) + UInt16(1)
-    end
+    isnan(v) && return NAN_ORDER_KEY
+    SGN || return UInt16(c) + UInt16(1)
+    sm = signmask(Binary{K,P,SGN,EXT})
+    neg = c >= sm
+    neg ? UInt16(sm) - UInt16(c - sm) : UInt16(sm) + UInt16(c) + UInt16(1)
 end
 
 """TotalOrder⟨fx,fy⟩ (draft §4.12.1): x ≤ y in the total order (single NaN largest).
@@ -108,9 +108,13 @@ end
 Base.isless(x::T, y::T) where {T<:Binary} = order_key(x) < order_key(y)
 
 # Numeric comparisons (NaN unordered; keys are order-isomorphic to datums off NaN)
-Base.:(==)(x::T, y::T) where {T<:Binary} = (isnan(x) | isnan(y)) ? false : order_key(x) == order_key(y)
-Base.:(<)(x::T, y::T) where {T<:Binary}  = (isnan(x) | isnan(y)) ? false : order_key(x) < order_key(y)
-Base.:(<=)(x::T, y::T) where {T<:Binary} = (isnan(x) | isnan(y)) ? false : order_key(x) <= order_key(y)
+"""Numeric comparison is defined only when neither operand is NaN — every
+`==`/`<`/`<=` below returns `false` otherwise, per IEEE unorderedness."""
+@inline _comparable(x::Binary, y::Binary) = !(isnan(x) | isnan(y))
+
+Base.:(==)(x::T, y::T) where {T<:Binary} = _comparable(x, y) && order_key(x) == order_key(y)
+Base.:(<)(x::T, y::T) where {T<:Binary}  = _comparable(x, y) && order_key(x) < order_key(y)
+Base.:(<=)(x::T, y::T) where {T<:Binary} = _comparable(x, y) && order_key(x) <= order_key(y)
 
 # ---- counting sort over the key space (bitops plan K1): ≤ 2^K + 1 distinct keys,
 # equal keys ⇒ identical code points, so stability is moot; O(n) one-pass counts.
@@ -127,14 +131,12 @@ function Base.sort!(v::AbstractVector{T}, lo::Int, hi::Int, ::CodeCountingSort,
     nk = (1 << K) + 1                              # keys 1..2^K plus NaN sentinel bucket
     counts = zeros(Int, nk + 1)
     key2code = Vector{UInt8}(undef, nk + 1)
+    bucket(k) = k == NAN_ORDER_KEY ? nk + 1 : Int(k)   # sentinel folds to the top bucket
     for c in 0x00:UInt8((1 << K) - 1)              # key ↔ code inversion, 2^K iterations
-        k = order_key(rawvalue(T, c))
-        b = k == typemax(UInt16) ? nk + 1 : Int(k)
-        key2code[b] = c
+        key2code[bucket(order_key(rawvalue(T, c)))] = c
     end
     @inbounds for i in lo:hi
-        k = order_key(v[i])
-        counts[k == typemax(UInt16) ? nk + 1 : Int(k)] += 1
+        counts[bucket(order_key(v[i]))] += 1
     end
     rev = o isa Base.Order.ReverseOrdering
     i = rev ? hi : lo
@@ -173,19 +175,24 @@ function Class(v::Binary)
 end
 
 # ---- NextGreaterThan / NextLessThan (draft §4.16): ±1 steps on magnitude code points
+
+# The stepping edges are named once here: both directions run off the lattice
+# into NaN, and both pivot on the extremal finite code.
+@inline _nan_datum(::Type{T}) where {T<:Binary} = rawvalue(T, nan_code(T))
+@inline _minfinite_code(::Type{T}) where {T<:Binary} = codepoint(MinFiniteOf(T))
+@inline _maxfinite_code(::Type{T}) where {T<:Binary} = codepoint(MaxFiniteOf(T))
+
 """NextGreaterThan(v) (draft §4.16): the least datum greater than `v` in the total
 order — one step up the code lattice, with NaN → NaN and MaxFinite/+Inf → NaN at
 the top. `Base.nextfloat` on `Binary` is this operation."""
 function NextGreaterThan(v::T) where {K,P,SGN,EXT,T<:Binary{K,P,SGN,EXT}}
     isnan(v) && return v
     c = codepoint(v)
-    maxfin = codepoint(MaxFiniteOf(T))
     if EXT
-        c == posinf_code(T) && return rawvalue(T, nan_code(T))         # Inf → NaN
+        c == posinf_code(T) && return _nan_datum(T)                    # Inf → NaN
         SGN && c == neginf_code(T) && return MinFiniteOf(T)            # -Inf → MinFinite
-    end
-    if !EXT && c == maxfin
-        return rawvalue(T, nan_code(T))                                # Finite: MaxFinite → NaN
+    elseif c == _maxfinite_code(T)
+        return _nan_datum(T)                                           # Finite: MaxFinite → NaN
     end
     if SGN && signbit(v)
         c == (signmask(T) | 0x01) && return zero(T)                    # SmallestNegative → 0
@@ -200,17 +207,17 @@ function NextLessThan(v::T) where {K,P,SGN,EXT,T<:Binary{K,P,SGN,EXT}}
     isnan(v) && return v
     c = codepoint(v)
     if !SGN
-        c == 0x00 && return rawvalue(T, nan_code(T))
+        c == 0x00 && return _nan_datum(T)
         EXT && c == posinf_code(T) && return MaxFiniteOf(T)
-        (!EXT && c == codepoint(MinFiniteOf(T))) && return rawvalue(T, nan_code(T))
+        (!EXT && c == _minfinite_code(T)) && return _nan_datum(T)
         return rawvalue(T, c - 0x01)
     end
     if EXT
-        c == neginf_code(T) && return rawvalue(T, nan_code(T))          # -Inf → NaN
-        c == codepoint(MinFiniteOf(T)) && return rawvalue(T, neginf_code(T))
+        c == neginf_code(T) && return _nan_datum(T)                     # -Inf → NaN
+        c == _minfinite_code(T) && return rawvalue(T, neginf_code(T))
         c == posinf_code(T) && return MaxFiniteOf(T)
     else
-        c == codepoint(MinFiniteOf(T)) && return rawvalue(T, nan_code(T))
+        c == _minfinite_code(T) && return _nan_datum(T)
     end
     c == 0x00 && return rawvalue(T, signmask(T) | 0x01)                 # 0 → SmallestNegative
     signbit(v) ? rawvalue(T, c + 0x01) : rawvalue(T, c - 0x01)

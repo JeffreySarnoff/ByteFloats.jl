@@ -128,26 +128,32 @@ end
 @inline Base.precision(x::Binary) = precision(typeof(x))
 
 # ---- Naming grid, draft §3.2: BinaryKpP + s|u + e|f
+# The name is spelled in exactly one place: the alias-generating loop and the
+# public `formatname` both read it from here, so the grid cannot drift.
+_formatname(K, P, S, E) = Symbol("Binary", K, "p", P, S ? "s" : "u", E ? "e" : "f")
+
 const _NAMED = Dict{Symbol,DataType}()
 for K in 3:8, P in 1:K, S in (true, false), E in (true, false)
     S && P >= K && continue
-    name = Symbol("Binary", K, "p", P, S ? "s" : "u", E ? "e" : "f")
+    name = _formatname(K, P, S, E)
     T = Binary{K,P,S,E}
     @eval const $name = $T
     _NAMED[name] = T
 end
 """`formatname(T)` — the draft §3.2 name of a format type."""
-formatname(::Type{Binary{K,P,S,E}}) where {K,P,S,E} =
-    Symbol("Binary", K, "p", P, S ? "s" : "u", E ? "e" : "f")
+formatname(::Type{Binary{K,P,S,E}}) where {K,P,S,E} = _formatname(K, P, S, E)
 
 # Print fully-instantiated formats by their draft name; anything else (UnionAlls,
 # TypeVar-parameterized types met during stacktrace printing) defers to Base —
 # a parametric `::Type{Binary{K,P,S,E}}` method here can be handed unbound
 # static parameters by the printing machinery and crash (found by test).
+_fully_instantiated(T) =
+    T isa DataType && length(T.parameters) == 4 &&
+    T.parameters[1] isa Int && T.parameters[2] isa Int &&
+    T.parameters[3] isa Bool && T.parameters[4] isa Bool
+
 function Base.show(io::IO, T::Type{<:Binary})
-    if T isa DataType && length(T.parameters) == 4 &&
-       T.parameters[1] isa Int && T.parameters[2] isa Int &&
-       T.parameters[3] isa Bool && T.parameters[4] isa Bool
+    if _fully_instantiated(T)
         print(io, formatname(T))
     else
         invoke(show, Tuple{IO,Type}, io, T)
@@ -189,8 +195,9 @@ function Base.signbit(v::Binary{K,P,S,E}) where {K,P,S,E}
 end
 function issubnormal_3109(v::Binary{K,P,S,E}) where {K,P,S,E}
     (isnan(v) | isinf(v) | iszero(v)) && return false
-    m = S ? (codepoint(v) & ~signmask(typeof(v))) : codepoint(v)
-    m < UInt8(1 << (P - 1))
+    T = typeof(v)
+    m = S ? (codepoint(v) & ~signmask(T)) : codepoint(v)
+    m < codepoint(MinNormalOf(T))          # subnormal ⟺ magnitude below the least normal
 end
 Base.issubnormal(v::Binary) = issubnormal_3109(v)
 

@@ -30,7 +30,7 @@ function PackedVector(A::AbstractVector{F}) where {F<:Binary}
         w, off = _wordpos(K, i)
         c = UInt64(codepoint(v))
         words[w] |= c << off
-        if off + K > 64                                   # cross-word splice
+        if _crosses_word(off, K)                          # cross-word splice
             words[w + 1] |= c >> (64 - off)
         end
     end
@@ -41,10 +41,10 @@ Base.size(pv::PackedVector) = (pv.n,)
 Base.@propagate_inbounds function Base.getindex(pv::PackedVector{F}, i::Int) where {F}
     @boundscheck checkbounds(pv, i)
     K = bitwidth(F)
-    mask = UInt64((1 << K) - 1)
+    mask = _codemask(K)
     w, off = _wordpos(K, i)
     c = @inbounds pv.data[w] >> off
-    if off + K > 64
+    if _crosses_word(off, K)
         c |= @inbounds(pv.data[w + 1]) << (64 - off)
     end
     rawvalue(F, UInt8(c & mask))
@@ -52,16 +52,21 @@ end
 Base.@propagate_inbounds function Base.setindex!(pv::PackedVector{F}, v::F, i::Int) where {F}
     @boundscheck checkbounds(pv, i)
     K = bitwidth(F)
-    mask = UInt64((1 << K) - 1)
+    mask = _codemask(K)
     w, off = _wordpos(K, i)
     c = UInt64(codepoint(v))
     @inbounds pv.data[w] = (pv.data[w] & ~(mask << off)) | (c << off)
-    if off + K > 64
+    if _crosses_word(off, K)
         hi = K - (64 - off)                               # bits spilling into word w+1
         @inbounds pv.data[w + 1] = (pv.data[w + 1] & ~((UInt64(1) << hi) - 1)) | (c >> (64 - off))
     end
     pv
 end
+
+# Two facts every packed access needs: the low-K code mask, and whether an element
+# starting at bit `off` spills into the next word.
+@inline _codemask(K::Int) = UInt64((1 << K) - 1)
+@inline _crosses_word(off::Int, K::Int) = off + K > 64
 
 const _PACK_TILE = 256
 

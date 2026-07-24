@@ -194,7 +194,7 @@ dispatch after a change; zero-alloc when `f`'s result type doesn't depend on
 the default (a default-typed result boxes once at escape):
 
 ```julia
-with_default_type((T, x) -> T(x), 1.5)          # Binary8p2se(1.5 ≡ 0x2e)
+with_default_type((T, x) -> T(x), 1.5)          # Binary8p2se(1.5 ≡ 0x41)
 with_default_projection((ρ, x, y) -> Add(T, ρ, x, y), x, y)
 with_default_returntype(f, args...)              # f(DefaultReturnType(), args...)
 with_default_accumulatortype(f, args...)

@@ -165,59 +165,44 @@ end
 function blockproject(fr::Type{<:Binary}, ρ::ProjSpec, sr::Binary, Z::NTuple{B,Any};
                       rng::MaybeRNG=nothing) where {B}
     Sdat = decode(sr)
-    rr = isstochastic(ρ) ? (rng === nothing ? default_rng() : rng) : nothing
+    rr = _rng_for(ρ, rng)
     elems = ntuple(i -> _bp_element(fr, ρ, _drawR(ρ, rr, nothing), Z[i], Sdat), Val(B))
     Block(sr, elems)
 end
 
 # ---- generated elementwise BlockOp / ScaledOp surface (draft §5.4 / §5.5)
+# One shape per surface, generated at every arity — the §5.4 elementwise schema is
+# implemented once (blockproject) and the Block*/Scaled* wrappers around it are
+# now written once too, so no arity can drift from the others.
 for op in OP_REGISTRY
     op.name === :Convert && continue
     name = op.name; bname = Symbol(:Block, name); sname = Symbol(:Scaled, name); V = Val{name}
-    if op.arity == 1
-        @eval begin
-            function $bname(fr::Type{<:Binary}, ρ::ProjSpec, b1::Block{B}, sr::Binary;
-                            rng::MaybeRNG=nothing) where {B}
-                X1 = blockdecode(b1)
-                Z = ntuple(i -> ωeval($V(), X1[i]), Val(B))
-                blockproject(fr, ρ, sr, Z; rng)
-            end
-            function $sname(fr::Type{<:Binary}, ρ::ProjSpec, s1::Binary, x1::Binary;
-                            rng::MaybeRNG=nothing)
-                X = ωeval(Val(:Multiply), decode(s1), decode(x1))::Float64
-                _bp_element(fr, ρ, _drawR(ρ, rng, nothing), ωeval($V(), X), 1.0)
-            end
+
+    bs = [Symbol(:b, i) for i in 1:op.arity]                 # operand blocks
+    Xs = [Symbol(:X, i) for i in 1:op.arity]                 # their decoded lanes
+    block_params = [:($b::Block{B}) for b in bs]
+    decode_lanes = [:($(Xs[i]) = blockdecode($(bs[i]))) for i in 1:op.arity]
+    lane_i = [:($(Xs[i])[i]) for i in 1:op.arity]
+
+    ss = [Symbol(:s, i) for i in 1:op.arity]                 # (scale, element) pairs
+    xs = [Symbol(:x, i) for i in 1:op.arity]
+    scaled_params = collect(Iterators.flatten((:($(ss[i])::Binary), :($(xs[i])::Binary))
+                                              for i in 1:op.arity))
+    Xa = [Symbol(:Xa, i) for i in 1:op.arity]
+    scale_products = [:($(Xa[i]) = ωeval(Val(:Multiply), decode($(ss[i])), decode($(xs[i])))::Float64)
+                      for i in 1:op.arity]
+
+    @eval begin
+        function $bname(fr::Type{<:Binary}, ρ::ProjSpec, $(block_params...), sr::Binary;
+                        rng::MaybeRNG=nothing) where {B}
+            $(decode_lanes...)
+            Z = ntuple(i -> ωeval($V(), $(lane_i...)), Val(B))
+            blockproject(fr, ρ, sr, Z; rng)
         end
-    elseif op.arity == 2
-        @eval begin
-            function $bname(fr::Type{<:Binary}, ρ::ProjSpec, b1::Block{B}, b2::Block{B}, sr::Binary;
-                            rng::MaybeRNG=nothing) where {B}
-                X1 = blockdecode(b1); X2 = blockdecode(b2)
-                Z = ntuple(i -> ωeval($V(), X1[i], X2[i]), Val(B))
-                blockproject(fr, ρ, sr, Z; rng)
-            end
-            function $sname(fr::Type{<:Binary}, ρ::ProjSpec, s1::Binary, x1::Binary,
-                            s2::Binary, x2::Binary; rng::MaybeRNG=nothing)
-                Xa = ωeval(Val(:Multiply), decode(s1), decode(x1))::Float64
-                Xb = ωeval(Val(:Multiply), decode(s2), decode(x2))::Float64
-                _bp_element(fr, ρ, _drawR(ρ, rng, nothing), ωeval($V(), Xa, Xb), 1.0)
-            end
-        end
-    else
-        @eval begin
-            function $bname(fr::Type{<:Binary}, ρ::ProjSpec, b1::Block{B}, b2::Block{B},
-                            b3::Block{B}, sr::Binary; rng::MaybeRNG=nothing) where {B}
-                X1 = blockdecode(b1); X2 = blockdecode(b2); X3 = blockdecode(b3)
-                Z = ntuple(i -> ωeval($V(), X1[i], X2[i], X3[i]), Val(B))
-                blockproject(fr, ρ, sr, Z; rng)
-            end
-            function $sname(fr::Type{<:Binary}, ρ::ProjSpec, s1::Binary, x1::Binary, s2::Binary,
-                            x2::Binary, s3::Binary, x3::Binary; rng::MaybeRNG=nothing)
-                Xa = ωeval(Val(:Multiply), decode(s1), decode(x1))::Float64
-                Xb = ωeval(Val(:Multiply), decode(s2), decode(x2))::Float64
-                Xc = ωeval(Val(:Multiply), decode(s3), decode(x3))::Float64
-                _bp_element(fr, ρ, _drawR(ρ, rng, nothing), ωeval($V(), Xa, Xb, Xc), 1.0)
-            end
+        function $sname(fr::Type{<:Binary}, ρ::ProjSpec, $(scaled_params...);
+                        rng::MaybeRNG=nothing)
+            $(scale_products...)
+            _bp_element(fr, ρ, _drawR(ρ, rng, nothing), ωeval($V(), $(Xa...)), 1.0)
         end
     end
 end
@@ -260,13 +245,13 @@ end
 
 """BlockReduceAdd (draft §5.3.1): project(reduce(ωAdd, [0, X…]))."""
 function BlockReduceAdd(fr::Type{<:Binary}, ρ::ProjSpec, b::Block;
-                        rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
+                        rng::MaybeRNG=nothing, R::MaybeR=nothing)
     _finish(fr, ρ, _drawR(ρ, rng, R), _reduce_add_datum(blockdecode(b)))
 end
 
 """BlockReduceMultiply (draft §5.3.1): project(reduce(ωMultiply, [1, X…]))."""
 function BlockReduceMultiply(fr::Type{<:Binary}, ρ::ProjSpec, b::Block{B};
-                             rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing) where {B}
+                             rng::MaybeRNG=nothing, R::MaybeR=nothing) where {B}
     X = blockdecode(b)
     res = if any(isnan, X) || (any(iszero, X) && any(isinf, X))
         NaN                                                     # 0·∞ arises in the fold → NaN
@@ -291,7 +276,7 @@ end
 products and their sum are formed in the exact accumulator, with the ∞/NaN fold algebra
 resolved on the Float64 classifications first."""
 function BlockDotProduct(fr::Type{<:Binary}, ρ::ProjSpec, bx::Block{B}, by::Block{B};
-                         rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing) where {B}
+                         rng::MaybeRNG=nothing, R::MaybeR=nothing) where {B}
     X = blockdecode(bx); Y = blockdecode(by)
     pcls = ntuple(Val(B)) do i
         x, y = X[i], Y[i]

@@ -55,7 +55,7 @@ const _DEFAULT_ROUNDING   = Ref{RoundingMode3109}(roundingmode(_GUARD_PROJECTION
 const _DEFAULT_SATURATION = Ref{SaturationMode}(saturationmode(_GUARD_PROJECTION))
 const _DEFAULT_PROJECTION = Ref{ProjSpec}(_GUARD_PROJECTION)
 const _DEFAULT_RNG        = Ref{Union{Type{<:AbstractRNG},AbstractRNG}}(Random.Xoshiro)
-const _DEFAULT_RBITS      = Ref{Int}(8)
+const _DEFAULT_RBITS      = Ref{Int}(DEFAULT_RBITS)   # one source for the budget "8"
 
 """
     DefaultType() -> Type{<:Binary}
@@ -63,12 +63,16 @@ const _DEFAULT_RBITS      = Ref{Int}(8)
 
 The session's default format. Initialized to `Binary8p2se`.
 """
-DefaultType() = _DEFAULT_TYPE[]
-function DefaultType!(T::Type{Binary{K,P,S,E}}) where {K,P,S,E}
-    checkformat(K, P, S, E)     # Binary{9,…} is a legal type object; only the params are validated
-    _DEFAULT_TYPE[] = T
-    T
+# Shared by the two format-valued setters: `Binary{9,…}` is a perfectly legal
+# type object, so it is the *parameters* that must be validated, not the type.
+function _set_format_default!(ref, ::Type{Binary{K,P,S,E}}) where {K,P,S,E}
+    checkformat(K, P, S, E)
+    ref[] = Binary{K,P,S,E}
 end
+
+DefaultType() = _DEFAULT_TYPE[]
+DefaultType!(T::Type{Binary{K,P,S,E}}) where {K,P,S,E} =
+    _set_format_default!(_DEFAULT_TYPE, T)
 
 """
     DefaultReturnType() -> Type{<:Binary}
@@ -79,11 +83,8 @@ when the caller does not name one. Initialized to `Binary8p2se`. Independent of
 [`DefaultType`](@ref), which is the default *operand* format.
 """
 DefaultReturnType() = _DEFAULT_RETURN[]
-function DefaultReturnType!(T::Type{Binary{K,P,S,E}}) where {K,P,S,E}
-    checkformat(K, P, S, E)
-    _DEFAULT_RETURN[] = T
-    T
-end
+DefaultReturnType!(T::Type{Binary{K,P,S,E}}) where {K,P,S,E} =
+    _set_format_default!(_DEFAULT_RETURN, T)
 
 """
     DefaultAccumulatorType() -> Type{<:AbstractFloat}
@@ -178,9 +179,21 @@ DefaultRbits!(n::Int) = (_check_nrandbits(n); _DEFAULT_RBITS[] = n; n)
 # The slow path. `@noinline` so speculation failure cannot bloat or
 # de-specialize the caller; `where {F}` forces specialization on the closure,
 # `where {T}` / dispatch on ρ recovers the concrete type from the abstract Ref
-# read. Cost: one dynamic dispatch on entry + one boxed return.
+# read, so `f` runs fully specialized inside. Cost: one dynamic dispatch on
+# entry (plus a boxed return only when `f`'s result type is the default —
+# see the allocation contract below).
 @noinline _default_barrier(f::F, ::Type{T}, args...) where {F,T} = f(T, args...)
 @noinline _default_barrier(f::F, ρ::ProjSpec, args...) where {F} = f(ρ, args...)
+
+# The shared speculation. `current` is the *already-read* default: each
+# combinator reads its Ref exactly once, at the call below, so the read-once
+# discipline lives in one place rather than in four copies. `guard` carries its
+# value in its type (a `Type{…}` or a singleton `ProjSpec`), so the hit branch
+# is compiled against a constant.
+@inline function _with_default(f::F, current, guard, args...) where {F}
+    current === guard && return f(guard, args...)
+    _default_barrier(f, current, args...)
+end
 
 """
     with_default_type(f, args...)          -> f(DefaultType(), args...)
@@ -205,36 +218,26 @@ runtime-chosen type.
 
 ```julia-repl
 julia> with_default_type((T, x) -> T(x), 1.5)
-Binary8p2se(1.5 ≡ 0x2e)
+Binary8p2se(1.5 ≡ 0x41)
 
 julia> with_default_projection((ρ, x, y) -> Add(Binary8p4se, ρ, x, y),
                                Binary8p4se(1.5), Binary8p4se(0.25))
 Binary8p4se(1.75 ≡ 0x46)
 ```
 """
-@inline function with_default_type(f::F, args...) where {F}
-    T = DefaultType()                       # single Ref read
-    T === _GUARD_TYPE && return f(_GUARD_TYPE, args...)
-    _default_barrier(f, T, args...)
-end
+@inline with_default_type(f::F, args...) where {F} =
+    _with_default(f, DefaultType(), _GUARD_TYPE, args...)
 
-@inline function with_default_returntype(f::F, args...) where {F}
-    T = DefaultReturnType()
-    T === _GUARD_RETURN && return f(_GUARD_RETURN, args...)
-    _default_barrier(f, T, args...)
-end
+@inline with_default_returntype(f::F, args...) where {F} =
+    _with_default(f, DefaultReturnType(), _GUARD_RETURN, args...)
 
-@inline function with_default_accumulatortype(f::F, args...) where {F}
-    T = DefaultAccumulatorType()
-    T === _GUARD_ACCUM && return f(_GUARD_ACCUM, args...)
-    _default_barrier(f, T, args...)
-end
+@inline with_default_accumulatortype(f::F, args...) where {F} =
+    _with_default(f, DefaultAccumulatorType(), _GUARD_ACCUM, args...)
 
-@inline function with_default_projection(f::F, args...) where {F}
-    ρ = DefaultProjection()                 # guard the coherent pair, not the component Refs
-    ρ === _GUARD_PROJECTION && return f(_GUARD_PROJECTION, args...)
-    _default_barrier(f, ρ, args...)
-end
+# Reads the coherent pair, never the two component Refs separately: a concurrent
+# set could otherwise hand the guard a torn (rounding, saturation) combination.
+@inline with_default_projection(f::F, args...) where {F} =
+    _with_default(f, DefaultProjection(), _GUARD_PROJECTION, args...)
 
 @doc (@doc with_default_type) with_default_returntype
 @doc (@doc with_default_type) with_default_accumulatortype

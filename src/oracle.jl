@@ -127,6 +127,13 @@ end
 _encl1(f::F, x::Float64; fq=nothing, yd=NaN) where {F} = EncloseF(_mpfr1(f, x), fq, yd)
 _encl2(f::F, x::Float64, y::Float64; fq=nothing, yd=NaN) where {F} = EncloseF(_mpfr2(f, x, y), fq, yd)
 
+# The ordinary single-argument case: all three stages come from the *same* Base
+# function — MPFR ladder, Float128 pre-filter, eager Float64 estimate. Rows that
+# deviate (ArcCos's synthesized `_acos128`, the trig argument window, the
+# ladder-only fallbacks) keep calling `_encl1` directly, so a deviation from the
+# standard shape is visible at the call site instead of hidden in boilerplate.
+_encl1_libm(f::F, x::Float64) where {F} = _encl1(f, x; fq=() -> f(Float128(x)), yd=f(x))
+
 # Quadmath omits acos(::Float128); π/2 − asin is exact well within the 2^-90 envelope
 # (asin faithful + π half-ulp + one subtraction: ≲ 2^-108 relative).
 @inline _acos128(x::Float128) = ldexp(Float128(π), -1) - asin(x)
@@ -404,20 +411,20 @@ function ωeval(::Val{:Exp}, x::Float64)
     isnan(x) && return NaN
     isinf(x) && return x > 0.0 ? Inf : 0.0
     iszero(x) && return 1.0
-    _encl1(exp, x; fq=() -> exp(Float128(x)), yd=exp(x))
+    _encl1_libm(exp, x)
 end
 function ωeval(::Val{:Exp2}, x::Float64)
     isnan(x) && return NaN
     isinf(x) && return x > 0.0 ? Inf : 0.0
     iszero(x) && return 1.0
-    _encl1(exp2, x; fq=() -> exp2(Float128(x)), yd=exp2(x))
+    _encl1_libm(exp2, x)
 end
 function ωeval(::Val{:ExpMinusOne}, x::Float64)
     isnan(x) && return NaN
     x == -Inf && return -1.0
     x == Inf && return Inf
     iszero(x) && return 0.0
-    _encl1(expm1, x; fq=() -> expm1(Float128(x)), yd=expm1(x))
+    _encl1_libm(expm1, x)
 end
 function ωeval(::Val{:Log}, x::Float64)          # draft §4.11 Log rows
     isnan(x) && return NaN
@@ -426,7 +433,7 @@ function ωeval(::Val{:Log}, x::Float64)          # draft §4.11 Log rows
     x < 0.0 && return NaN
     iszero(x) && return -Inf
     x == 1.0 && return 0.0
-    _encl1(log, x; fq=() -> log(Float128(x)), yd=log(x))
+    _encl1_libm(log, x)
 end
 function ωeval(::Val{:Log2}, x::Float64)
     isnan(x) && return NaN
@@ -439,7 +446,7 @@ function ωeval(::Val{:Log2}, x::Float64)
     # screen here is cheaper and exact (Class R).
     xe = exponent(x)
     x == ldexp(1.0, xe) && return Float64(xe)
-    _encl1(log2, x; fq=() -> log2(Float128(x)), yd=log2(x))
+    _encl1_libm(log2, x)
 end
 function ωeval(::Val{:LogOnePlus}, x::Float64)
     isnan(x) && return NaN
@@ -447,7 +454,7 @@ function ωeval(::Val{:LogOnePlus}, x::Float64)
     x == -1.0 && return -Inf
     x == Inf && return Inf
     iszero(x) && return 0.0
-    _encl1(log1p, x; fq=() -> log1p(Float128(x)), yd=log1p(x))
+    _encl1_libm(log1p, x)
 end
 function ωeval(::Val{:Softplus}, x::Float64)
     isnan(x) && return NaN
@@ -477,7 +484,7 @@ for (name, bf) in ((:Sin, :sin), (:Cos, :cos), (:Tan, :tan))
         # huge-argument reduction accuracy in libquadmath is undocumented; keep the
         # pre-filter inside a conservative window and let MPFR own the rest (§9.2:
         # "undocumented envelope ⇒ fall back")
-        abs(x) <= 1.0e15 ? _encl1($bf, x; fq=() -> $bf(Float128(x)), yd=$bf(x)) : _encl1($bf, x)
+        abs(x) <= 1.0e15 ? _encl1_libm($bf, x) : _encl1($bf, x)
     end
 end
 function ωeval(::Val{:ArcSin}, x::Float64)
@@ -486,7 +493,7 @@ function ωeval(::Val{:ArcSin}, x::Float64)
     iszero(x) && return 0.0
     x == 1.0 && return _encl_piscale(1, 1)                    #  π/2
     x == -1.0 && return _encl_piscale(-1, 1)                  # −π/2
-    _encl1(asin, x; fq=() -> asin(Float128(x)), yd=asin(x))
+    _encl1_libm(asin, x)
 end
 function ωeval(::Val{:ArcCos}, x::Float64)
     isnan(x) && return NaN
@@ -501,7 +508,7 @@ function ωeval(::Val{:ArcTan}, x::Float64)
     x == Inf && return _encl_piscale(1, 1)
     x == -Inf && return _encl_piscale(-1, 1)
     iszero(x) && return 0.0
-    _encl1(atan, x; fq=() -> atan(Float128(x)), yd=atan(x))
+    _encl1_libm(atan, x)
 end
 for (name, bf, inf2) in ((:Sinh, :sinh, :same), (:Cosh, :cosh, :pos), (:Tanh, :tanh, :one))
     @eval function ωeval(::Val{$(QuoteNode(name))}, x::Float64)
@@ -512,21 +519,21 @@ for (name, bf, inf2) in ((:Sinh, :sinh, :same), (:Cosh, :cosh, :pos), (:Tanh, :t
                                :(return x > 0 ? 1.0 : -1.0))
         end
         iszero(x) && return $(name === :Cosh ? 1.0 : 0.0)
-        _encl1($bf, x; fq=() -> $bf(Float128(x)), yd=$bf(x))
+        _encl1_libm($bf, x)
     end
 end
 function ωeval(::Val{:ArcSinh}, x::Float64)
     isnan(x) && return NaN
     isinf(x) && return x
     iszero(x) && return 0.0
-    _encl1(asinh, x; fq=() -> asinh(Float128(x)), yd=asinh(x))
+    _encl1_libm(asinh, x)
 end
 function ωeval(::Val{:ArcCosh}, x::Float64)
     isnan(x) && return NaN
     x < 1.0 && return NaN
     x == 1.0 && return 0.0
     x == Inf && return Inf
-    _encl1(acosh, x; fq=() -> acosh(Float128(x)), yd=acosh(x))
+    _encl1_libm(acosh, x)
 end
 function ωeval(::Val{:ArcTanh}, x::Float64)
     isnan(x) && return NaN
@@ -534,7 +541,7 @@ function ωeval(::Val{:ArcTanh}, x::Float64)
     x == 1.0 && return Inf
     x == -1.0 && return -Inf
     iszero(x) && return 0.0
-    _encl1(atanh, x; fq=() -> atanh(Float128(x)), yd=atanh(x))
+    _encl1_libm(atanh, x)
 end
 
 # ============================================================================

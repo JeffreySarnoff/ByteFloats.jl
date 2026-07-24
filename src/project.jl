@@ -258,11 +258,12 @@ end
 # parameters, so it constant-folds (bitops plan K4). Verified by enumeration against
 # Base.decompose(maxfinite_datum(T)) in the gate suite.
 @inline function _extremal_SQ(::Type{T}) where {K,P,SGN,EXT,T<:Binary{K,P,SGN,EXT}}
+    hidden = Int64(1) << (P - 1)                          # implicit-bit weight, as in ωDecode
     c = codepoint(MaxFiniteOf(T))
-    Tt = c & UInt8((1 << (P - 1)) - 1)
-    Eb = Int(c >> (P - 1))
+    tsig = c & UInt8(hidden - 1)                          # trailing significand
+    Eb = Int(c >> (P - 1))                                # biased exponent field
     B = expbias(T)
-    S = Eb == 0 ? Int64(Tt) : Int64(Tt) + (Int64(1) << (P - 1))
+    S = Eb == 0 ? Int64(tsig) : Int64(tsig) + hidden
     Q = Int64((Eb == 0 ? 1 : Eb) - B - (P - 1))
     (S, Q)
 end

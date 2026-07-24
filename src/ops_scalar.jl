@@ -151,11 +151,21 @@ end
 # 26.5 ns/elem); the 1,347 ns reading that motivated it was dynamic keyword
 # dispatch through a non-const global in the measurement harness, not this code.
 const MaybeRNG = Union{Nothing,AbstractRNG}
-@inline function _drawR(ρ::ProjSpec, rng::MaybeRNG, R::Union{Nothing,Int})
+"""An explicit stochastic draw `R`, or `nothing` to draw one from the rng."""
+const MaybeR = Union{Nothing,Int}
+
+"""Resolve a caller-supplied rng, falling back to the task-local default. Call
+sites hoist this out of loops so array kernels resolve once per call, not per
+element."""
+@inline _resolve_rng(rng::MaybeRNG) = rng === nothing ? default_rng() : rng
+"""The rng an operation under ρ will actually draw from — `nothing` for pure ρ,
+which must never touch RNG state."""
+@inline _rng_for(ρ::ProjSpec, rng::MaybeRNG) = isstochastic(ρ) ? _resolve_rng(rng) : nothing
+@inline function _drawR(ρ::ProjSpec, rng::MaybeRNG, R::MaybeR)
     isstochastic(ρ) || return 0
     N = nrandbits(ρ)
     if R === nothing
-        r = rng === nothing ? default_rng() : rng
+        r = _resolve_rng(rng)
         return Int(rand(r, UInt64) & ((UInt64(1) << N) - 1))
     end
     0 <= R < (1 << N) || throw(ArgumentError("explicit R=$R outside 0:$(2^N - 1) for N=$N random bits"))
@@ -189,33 +199,24 @@ register_op!(:Convert, 1, :conv)
 
 # ---- generated spec register + same-format convenience methods
 # Spec form follows the draft's parameterization order: Op(f_r, ρ, operands...).
+# One shape, generated at every arity: the three hand-written branches were the
+# same two methods with one, two, or three operands spelled out. Arity now comes
+# from the registry row, so a change to the calling convention — the keyword set,
+# the draw, the decode step — cannot land unevenly across arities.
 for op in OP_REGISTRY
     op.name === :Convert && continue
     name = op.name; V = Val{name}
-    if op.arity == 1
-        @eval begin
-            @inline function $name(fr::Type{<:Binary}, ρ::ProjSpec, x::Binary;
-                                   rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
-                apply_op($V(), fr, ρ, _drawR(ρ, rng, R), decode(x))
-            end
-            @inline $name(x::T; kw...) where {T<:Binary} = $name(T, default_projspec(T), x; kw...)
+    xs = [Symbol(:x, i) for i in 1:op.arity]
+    spec_args = [:($x::Binary) for x in xs]               # spec form: any formats
+    same_args = [:($x::T) for x in xs]                    # convenience form: one format
+    decoded = [:(decode($x)) for x in xs]
+    @eval begin
+        @inline function $name(fr::Type{<:Binary}, ρ::ProjSpec, $(spec_args...);
+                               rng::MaybeRNG=nothing, R::MaybeR=nothing)
+            apply_op($V(), fr, ρ, _drawR(ρ, rng, R), $(decoded...))
         end
-    elseif op.arity == 2
-        @eval begin
-            @inline function $name(fr::Type{<:Binary}, ρ::ProjSpec, x::Binary, y::Binary;
-                                   rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
-                apply_op($V(), fr, ρ, _drawR(ρ, rng, R), decode(x), decode(y))
-            end
-            @inline $name(x::T, y::T; kw...) where {T<:Binary} = $name(T, default_projspec(T), x, y; kw...)
-        end
-    else
-        @eval begin
-            @inline function $name(fr::Type{<:Binary}, ρ::ProjSpec, x::Binary, y::Binary, z::Binary;
-                                   rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
-                apply_op($V(), fr, ρ, _drawR(ρ, rng, R), decode(x), decode(y), decode(z))
-            end
-            @inline $name(x::T, y::T, z::T; kw...) where {T<:Binary} = $name(T, default_projspec(T), x, y, z; kw...)
-        end
+        @inline $name($(same_args...); kw...) where {T<:Binary} =
+            $name(T, default_projspec(T), $(xs...); kw...)
     end
 end
 
@@ -229,24 +230,24 @@ floats (widened exactly to the Float64 carrier), `Float128` (projected directly)
 directly; the caller warrants the value is exact).
 """
 @inline function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::Binary;
-                         rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
+                         rng::MaybeRNG=nothing, R::MaybeR=nothing)
     project(fr, ρ, decode(x); R=_drawR(ρ, rng, R))
 end
 @inline function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::Union{Float64,Float32,Float16};
-                         rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
+                         rng::MaybeRNG=nothing, R::MaybeR=nothing)
     project(fr, ρ, Float64(x); R=_drawR(ρ, rng, R))   # exact widening
 end
 @inline function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::Float128;
-                         rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
+                         rng::MaybeRNG=nothing, R::MaybeR=nothing)
     project(fr, ρ, x; R=_drawR(ρ, rng, R))            # preserve all 113 significand bits
 end
 function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::Integer;
-                 rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
+                 rng::MaybeRNG=nothing, R::MaybeR=nothing)
     b = BigFloat(x; precision=max(64, ndigits(x, base=2) + 8))       # exact
     project(fr, ρ, b; R=_drawR(ρ, rng, R))
 end
 function Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::BigFloat;
-                 rng::MaybeRNG=nothing, R::Union{Nothing,Int}=nothing)
+                 rng::MaybeRNG=nothing, R::MaybeR=nothing)
     project(fr, ρ, x; R=_drawR(ρ, rng, R))
 end
 Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::AbstractFloat; kw...) = Convert(fr, ρ, Float64(x); kw...)

@@ -271,7 +271,7 @@ go through the `with_default_*` combinators — `with_default_type`,
 
 ```julia-repl
 julia> with_default_type((T, x) -> T(x), 1.5)
-Binary8p2se(1.5 ≡ 0x2e)
+Binary8p2se(1.5 ≡ 0x41)
 ```
 
 While a default still holds its initial value, the combinator's call is
