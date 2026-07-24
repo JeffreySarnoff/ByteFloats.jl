@@ -1,5 +1,9 @@
 # ByteFloats.jl
 
+<!-- updated by /doc-it -->
+[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://JeffreySarnoff.github.io/ByteFloats.jl/dev/)
+[![CI](https://github.com/JeffreySarnoff/ByteFloats.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/JeffreySarnoff/ByteFloats.jl/actions/workflows/CI.yml)
+
 A conforming, performance-oriented Julia implementation of the **IEEE P3109 draft
 standard** — *Arithmetic Formats for Machine Learning* — covering all 120 binary
 formats at bitwidths 3–8, every projection (rounding × saturation) mode including
@@ -30,6 +34,7 @@ Exp(Binary8p4se, RNE_SatNone, Binary8p4se.(randn(1000)))   # table-gather kernel
 ## Documentation
 
 <!-- updated by /doc-it -->
+**[Read the docs](https://JeffreySarnoff.github.io/ByteFloats.jl/dev/)** —
 Markdown sources in `docs/src/` (Introduction, Cheat Sheet, User Guide, User
 Examples, Technical Guide, Technical Examples, Adding Operations, API
 Reference). Build the HTML site locally:
