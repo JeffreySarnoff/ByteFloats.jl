@@ -33,12 +33,13 @@ trades speed only. CI runs both configurations
 
 ## Architecture
 
-Thirteen source layers, included in a fixed order by
+Fourteen source layers, included in a fixed order by
 [`src/ByteFloats.jl`](src/ByteFloats.jl):
 
 ```
 formats → projspec → defaults → decode_encode → project → ops_scalar
-        → oracle → tables → kernels → blocks → packed → approx → rand
+        → juliacompat → oracle → tables → kernels → blocks → packed
+        → approx → rand
 ```
 
 `ops_scalar` deliberately precedes `oracle` (the evaluation-protocol structs
@@ -52,7 +53,8 @@ in `src/ByteFloats.jl` in sync when adding a layer.**
 | `defaults.jl` | settable session defaults (`DefaultType`, `DefaultProjection`, …); convenience forms consume them through a speculation guard |
 | `decode_encode.jl` | ωDecode / ωEncode, ordering keys, `Next*` ops |
 | `project.jl` | the projection engine: ωRoundToPrecision → ωSaturate → ωEncode |
-| `ops_scalar.jl` | `OP_REGISTRY`, `apply_op`, spec + Base register veneers |
+| `ops_scalar.jl` | `OP_REGISTRY`, `apply_op`, the spec register |
+| `juliacompat.jl` | the Base register: declarative op ⇒ Base-function map + no-counterpart set |
 | `oracle.jl` | ω-semantics catalog: rigorous defined results. Never on the hot path |
 | `tables.jl` | table lifecycle + cache for pure-ρ specializations |
 | `kernels.jl` | array kernels: Shape A (table gather), Shape B (per-element compute) |
@@ -157,7 +159,7 @@ manually:
 ## Repository layout
 
 ```
-src/           the thirteen layers + the two vendored Float128 modules
+src/           the fourteen layers + the two vendored Float128 modules
 test/          runtests.jl (shipped) + three manual harnesses
 docs/          Documenter site (make.jl, builddocs.jl, src/*.md) and docs/pdf/
 benchmark/     current Chairmarks suite + report generator (own environment)

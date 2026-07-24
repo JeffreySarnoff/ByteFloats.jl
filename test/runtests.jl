@@ -1354,6 +1354,54 @@ end
 end
 
 # ==========================================================================
+# juliacompat.jl — the Base register
+# ==========================================================================
+@testset "juliacompat.jl" begin
+    using ByteFloats: _BASE_UNARY, _BASE_BINARY, _BASE_OPERATOR, _BASE_TERNARY,
+                      _NO_BASE_COUNTERPART, _UNARY_OPS, _BINARY_OPS, _TERNARY_OPS
+    T = Binary8p4se
+    codes = 0x00:0xff
+
+    # the partition is exhaustive and non-overlapping: every op in the three
+    # lists is either mapped or deliberately unmapped, and never both
+    mapped = Set{Symbol}(vcat(first.(collect(_BASE_UNARY)), first.(collect(_BASE_BINARY)),
+                              collect(_BASE_OPERATOR), collect(_BASE_TERNARY)))
+    unmapped = Set{Symbol}(_NO_BASE_COUNTERPART)
+    allops = Set{Symbol}((_UNARY_OPS..., _BINARY_OPS..., _TERNARY_OPS...))
+    @test isempty(intersect(mapped, unmapped))
+    @test union(mapped, unmapped) == allops
+
+    # every mapped unary veneer ≡ its draft op, exhaustively
+    for (op, bf) in _BASE_UNARY
+        f = getfield(Base, bf); g = getfield(ByteFloats, op)
+        @test all(f(rawvalue(T, c)) === g(rawvalue(T, c)) for c in codes)
+    end
+    # operators and binary veneers, sampled pairs
+    pairs = [(rawvalue(T, c), rawvalue(T, d)) for c in 0x00:0x11:0xff, d in 0x00:0x0d:0xff]
+    for (x, y) in pairs
+        @test x + y === Add(x, y) && x - y === Subtract(x, y)
+        @test x * y === Multiply(x, y) && x / y === Divide(x, y)
+        @test atan(y, x) === ArcTan2(y, x)
+        @test copysign(x, y) === CopySign(x, y) && hypot(x, y) === Hypot(x, y)
+        @test min(x, y) === Minimum(x, y) && max(x, y) === Maximum(x, y)
+        @test minmax(x, y) === (Minimum(x, y), Maximum(x, y))
+    end
+    @test all(-rawvalue(T, c) === Negate(rawvalue(T, c)) for c in codes)
+    # ternary veneers, sampled triples
+    for c in 0x00:0x33:0xff, d in 0x00:0x3d:0xff, e in 0x00:0x2f:0xff
+        x, y, z = rawvalue(T, c), rawvalue(T, d), rawvalue(T, e)
+        @test fma(x, y, z) === FMA(x, y, z) === muladd(x, y, z)
+        @test clamp(x, min(y, z), max(y, z)) === Clamp(x, min(y, z), max(y, z))
+    end
+    # composites are componentwise draft results
+    for c in 0x00:0x07:0xff
+        x = rawvalue(T, c)
+        @test sincos(x) === (Sin(x), Cos(x))
+        @test sincospi(x) === (SinPi(x), CosPi(x))
+    end
+end
+
+# ==========================================================================
 # rand.jl — Random-API integration
 # ==========================================================================
 @testset "rand.jl" begin

@@ -267,30 +267,6 @@ Convert(fr::Type{<:Binary}, ρ::ProjSpec, x::AbstractFloat; kw...) = Convert(fr,
 @inline _convert_default(::Type{T}, x) where {T<:Binary} =
     with_default_projection((ρ, v) -> Convert(T, ρ, v), x)
 
-# ---- Base register (design §10.2): same-format, default-ρ veneers only.
-# Every method is exactly one spec-register call; there is no third semantics.
-Base.:+(x::T, y::T) where {T<:Binary} = Add(x, y)
-Base.:-(x::T, y::T) where {T<:Binary} = Subtract(x, y)
-Base.:*(x::T, y::T) where {T<:Binary} = Multiply(x, y)
-Base.:/(x::T, y::T) where {T<:Binary} = Divide(x, y)
-Base.:-(x::T) where {T<:Binary} = Negate(x)
-Base.abs(x::Binary) = Abs(x)
-Base.copysign(x::T, y::T) where {T<:Binary} = CopySign(x, y)
-Base.inv(x::Binary) = Recip(x)
-Base.sqrt(x::Binary) = Sqrt(x)
-Base.fma(x::T, y::T, z::T) where {T<:Binary} = FMA(x, y, z)
-Base.muladd(x::T, y::T, z::T) where {T<:Binary} = FMA(x, y, z)
-Base.min(x::T, y::T) where {T<:Binary} = Minimum(x, y)
-Base.max(x::T, y::T) where {T<:Binary} = Maximum(x, y)
-Base.clamp(x::T, lo::T, hi::T) where {T<:Binary} = Clamp(x, lo, hi)
-Base.hypot(x::T, y::T) where {T<:Binary} = Hypot(x, y)
-Base.atan(y::T, x::T) where {T<:Binary} = ArcTan2(y, x)
-for (bf, op) in ((:exp, :Exp), (:exp2, :Exp2), (:expm1, :ExpMinusOne),
-                 (:log, :Log), (:log2, :Log2), (:log1p, :LogOnePlus),
-                 (:sin, :Sin), (:cos, :Cos), (:tan, :Tan),
-                 (:asin, :ArcSin), (:acos, :ArcCos), (:atan, :ArcTan),
-                 (:sinh, :Sinh), (:cosh, :Cosh), (:tanh, :Tanh),
-                 (:asinh, :ArcSinh), (:acosh, :ArcCosh), (:atanh, :ArcTanh),
-                 (:sinpi, :SinPi), (:cospi, :CosPi), (:tanpi, :TanPi))
-    @eval Base.$bf(x::Binary) = $op(x)
-end
+# The Base register (design §10.2) — the Base-function veneers over these
+# spec-register calls — lives in juliacompat.jl, mapped declaratively from the
+# op lists above.

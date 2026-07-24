@@ -15,7 +15,8 @@ Source files load in dependency order, each layer speaking only downward:
 | defaults | `defaults.jl` | settable session defaults (`DefaultType`, `DefaultProjection`, …) behind `Ref`s; consumed via the speculation guard |
 | codec | `decode_encode.jl` | decode (generated tables + bit-composed compute), encode, order keys, counting sort, `Class`, Next ops |
 | engine | `project.jl` | `round_to_precision` (mask-based Float64 core + generic core), `saturate`, `project`, `project_interval` |
-| ops | `ops_scalar.jl` | result-kind protocol, `apply_op`, the operation registry, both API registers |
+| ops | `ops_scalar.jl` | result-kind protocol, `apply_op`, the operation registry, the spec register |
+| compat | `juliacompat.jl` | the Base register: declarative op ⇒ Base-function map |
 | oracle | `oracle.jl` | ω-semantics for all 52 operations |
 | tables | `tables.jl` | the pure-ρ result-table cache (unary/binary + bitwidth-gated ternary) |
 | kernels | `kernels.jl` | Shape-A gathers, Shape-B scalar/threaded loops, `vmap` |
