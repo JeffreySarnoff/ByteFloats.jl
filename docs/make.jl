@@ -13,13 +13,11 @@ makedocs(;
     build = get(ENV, "DOCS_BUILD_DIR", "build"),
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", nothing) == "true",
-        canonical = "https://example.github.io/ByteFloats.jl",   # set to the real Pages URL
+        canonical = "https://JeffreySarnoff.github.io/ByteFloats.jl",
+        edit_link = "main",
         assets = String[],
     ),
-    # Local/non-git builds: disable repository detection (Documenter 1.x errors
-    # without a git remote). On CI with a real repository, delete this line and
-    # add `edit_link = "main"` to the HTML options to restore edit links.
-    remotes = nothing,
+    repo = Documenter.Remotes.GitHub("JeffreySarnoff", "ByteFloats.jl"),
     pages = [
         "Home" => "index.md",
         "Introduction" => "introduction.md",
@@ -37,9 +35,10 @@ makedocs(;
     warnonly = [:cross_references, :missing_docs],
 )
 
-# Uncomment and point at the real repository to publish from CI:
-# deploydocs(;
-#     repo = "github.com/<org>/ByteFloats.jl",
-#     devbranch = "main",
-#     push_preview = true,
-# )
+# Publishes to the gh-pages branch from CI (no-ops on local builds, which lack
+# the deploy credentials). Requires GitHub Pages to serve from gh-pages.
+deploydocs(;
+    repo = "github.com/JeffreySarnoff/ByteFloats.jl",
+    devbranch = "main",
+    push_preview = true,
+)

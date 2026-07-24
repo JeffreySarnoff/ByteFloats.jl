@@ -1,8 +1,15 @@
 # Regenerating and reading the benchmark report
 
+<!-- updated by /doc-it -->
+The runnable suite lives in `benchmark/` (its own environment, `benchmark/Project.toml`).
+This directory holds the generated artifacts — `benchmark_report.md`/`.pdf`,
+`domain_ops.csv`, `safe_domain_ops.csv` — and this guide. `benchmarking/benchmarking.jl`
+and `benchmarking/simple_benchmarking.jl` are earlier copies kept for reference;
+`benchmark/benchmarking.jl` is the current script.
+
 ## Regenerating
 
-From your repo root (C:/github/ByteFloats.jl), it's two commands.
+From your repository root, it's two commands.
 
 One-time environment setup:
 

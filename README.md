@@ -12,7 +12,7 @@ single write path into a code point; results are established against a rigorous
 oracle (exact arithmetic, IEEE-correctly-rounded `Float128` where mandated, MPFR
 directed enclosures with precision escalation elsewhere); approximation exists only
 behind an explicit registry whose deviation bounds are *measured exhaustively* at
-registration. The test suite enumerates rather than samples: ≈ 8.8 million
+registration. The test suite enumerates rather than samples: ≈ 8.9 million
 assertions.
 
 ```julia
@@ -29,8 +29,10 @@ Exp(Binary8p4se, RNE_SatNone, Binary8p4se.(randn(1000)))   # table-gather kernel
 
 ## Documentation
 
-Markdown sources in `docs/src/` (Introduction, User Guide, User Examples,
-Technical Guide, Technical Examples, API Reference). Build the HTML site locally:
+<!-- updated by /doc-it -->
+Markdown sources in `docs/src/` (Introduction, Cheat Sheet, User Guide, User
+Examples, Technical Guide, Technical Examples, Adding Operations, API
+Reference). Build the HTML site locally:
 
 ```
 julia docs/builddocs.jl
@@ -53,12 +55,19 @@ julia --project=benchmark benchmark/benchmarking.jl benchmark_report.md
 
 ## Repository layout
 
+<!-- updated by /doc-it -->
 ```
-src/         eleven source layers (formats → … → approx) plus the vendored
-             Float128 fma/faa soft-float modules; see the Technical Guide
-test/        the consolidated exhaustive suite (runtests.jl)
-docs/        Documenter site (make.jl, builddocs.jl, src/*.md)
-benchmark/   Chairmarks suite + report generator (own environment)
+src/           eleven source layers (formats → … → approx) plus the vendored
+               Float128 fma/faa soft-float modules; see the Technical Guide
+test/          the consolidated exhaustive suite (runtests.jl) plus the
+               independent validation harness (validate_correctness.jl,
+               refimpl.jl, ternary_opt.jl)
+docs/          Documenter site (make.jl, builddocs.jl, src/*.md) and docs/pdf/
+benchmark/     Chairmarks suite + report generator (own environment) — current
+benchmarking/  generated report (benchmark_report.md/.pdf), operation-domain
+               CSVs, and the report-reading guide (README.md)
+Float128FAA/   standalone `faa(x,y,z)` package, vendored as src/faa128.jl
+Float128FMA/   standalone `fma` package for Float128, vendored as src/fma128.jl
 ```
 
 ## Notes

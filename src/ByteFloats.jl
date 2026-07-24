@@ -36,7 +36,7 @@ include("faa128.jl")
 using .Float128FAA          
 
 # Include order: formats → projspec → decode_encode → project → ops_scalar →
-# oracle → tables → kernels → blocks → approx.
+# oracle → tables → kernels → blocks → packed → approx.
 # (One deliberate delta from the architecture §11 listing: the evaluation-protocol
 # structs BigExactF/EncloseF live in ops_scalar.jl per §6, so ops_scalar precedes
 # oracle; oracle's references to them are function-body-late-bound either way, but
