@@ -129,6 +129,19 @@ truth without losing what directed/tie/stochastic rounding needs.
 `Pkg.test()`. It **enumerates rather than samples**; the value sets are small
 enough that sampling is never necessary. Preserve that property in new tests.
 
+`test/quality.jl` (included from `runtests.jl`) is the hygiene gate:
+
+- `Aqua.test_all` — all checks on, no exclusions. Notably, the
+  **unbound-type-parameter** check is why `Block`'s inner constructor takes
+  `Tuple{FE,Vararg{FE,Bm1}}` rather than `NTuple{B,FE}`: the empty tuple would
+  leave `FE` unbound. Keep new signatures free of that pattern.
+- `JET.report_package` — whole-package analysis. One report is filtered by name
+  (`_vmap_packed`), because JET widens the correlation between a `::Type{fr}`
+  argument and the element type of a container built from it. If you add a
+  filter, it must come with a concrete-call gate proving the path is clean.
+- `JET.@test_call` on concrete entry points — the analysis that matches the
+  specialization doctrine. Add a line here for every new public entry point.
+
 The other files in `test/` are not run by `Pkg.test()` and are included/run
 manually:
 
