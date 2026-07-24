@@ -126,7 +126,7 @@ julia> Class(Binary8p4se(0.01))           # draft classification
 ClassPosNormal::FPClass = 0x06
 ```
 
-### Random values
+## Random values
 
 The Random API works on every format, in every setup Julia programmers expect.
 
