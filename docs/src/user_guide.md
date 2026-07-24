@@ -275,10 +275,17 @@ Binary8p2se(1.5 ≡ 0x2e)
 ```
 
 While a default still holds its initial value, the combinator's call is
-statically compiled against that constant — zero dispatch, zero allocation
-(pinned in the test suite alongside the other specialization regressions).
-After the default is changed it costs one dynamic dispatch plus one boxed
-return at entry, with everything inside the call fully specialized.
+statically compiled against that constant — no dynamic dispatch. After the
+default is changed it crosses a function barrier: one dynamic dispatch at
+entry, everything inside fully specialized.
+
+Allocation contract: when `f`'s result type does not depend on the default —
+`with_default_projection` with the formats fixed by the caller is the normal
+shape — the call is zero-allocation with a concretely inferred result (pinned
+in the test suite). When the result's type *is* the default
+(`with_default_type` used as a constructor), the value is computed on the
+specialized path but boxes once where it escapes — the irreducible cost of a
+runtime-chosen type.
 
 ## Scalar operations: the two registers
 

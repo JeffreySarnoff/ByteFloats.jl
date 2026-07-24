@@ -25,10 +25,18 @@
 #      set — the coupled setters keep the stored ProjSpec coherent, so guard
 #      the pair, never the two component Refs separately);
 #   2. `===`-test against the shipped initial value (`_GUARD_*`): on hit the
-#      call is statically compiled against a constant — zero dispatch, zero
-#      allocation, inference sees the concrete type;
-#   3. on miss, cross the `@noinline` `_default_barrier`: one dynamic dispatch
-#      + one boxed return, everything inside fully specialized.
+#      call is statically compiled against a constant — no dynamic dispatch;
+#   3. on miss, cross the `@noinline` `_default_barrier`: one dynamic dispatch,
+#      everything inside fully specialized.
+# What the guard can and cannot buy: the combinator's return type is the UNION
+# over both branches. When `f`'s result type does not depend on the default —
+# the projection combinator's normal shape, where the caller fixes the formats
+# and ρ steers only the rounding — both branches infer the same concrete type
+# and the whole call is zero-allocation (pinned in the suite). When the result's
+# type IS the default (`with_default_type` as a constructor), the slow branch
+# infers `Any`, so the value boxes once at escape even on the fast path: the
+# irreducible cost of a runtime-chosen type. Only `@eval` method redefinition
+# (world age) could remove that box; these combinators deliberately don't.
 # `DefaultRNG`/`DefaultRbits` need no combinator: their reads don't steer
 # dispatch (`Ref{Int}` is concrete; an rng is passed through as a value).
 
@@ -183,9 +191,17 @@ DefaultRbits!(n::Int) = (_check_nrandbits(n); _DEFAULT_RBITS[] = n; n)
 Call `f` with the named session default as its first argument — the supported
 way to *consume* a default. While the default still holds its initial value
 (the overwhelmingly common case) the call is statically compiled against that
-constant: zero dispatch, zero allocation, concrete inferred result. After the
-default is changed, the call crosses a function barrier instead: one dynamic
-dispatch plus one boxed return, with everything inside fully specialized.
+constant: no dynamic dispatch, `f` fully specialized. After the default is
+changed, the call crosses a function barrier instead: one dynamic dispatch,
+everything inside fully specialized.
+
+Allocation contract: the combinator's return type unions both paths. When `f`'s
+result type does not depend on the default — e.g. `with_default_projection`
+with the formats fixed by the caller — the union is concrete and the call is
+**zero-allocation with a concretely inferred result**. When the result's type
+*is* the default (`with_default_type((T, x) -> T(x), …)`), the value is computed
+on the specialized path but boxes once at escape — the irreducible cost of a
+runtime-chosen type.
 
 ```julia-repl
 julia> with_default_type((T, x) -> T(x), 1.5)

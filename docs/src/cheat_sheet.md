@@ -188,8 +188,10 @@ Setting a rounding/saturation component rebuilds `DefaultProjection`; setting
 The convenience methods (`a + b`, `Exp(x)`) do **not** consult these — they stay
 pinned to `RNE_SatNone` via `default_projspec`.
 
-Consume a default via the combinators (zero-cost while unchanged, one dispatch
-after a change) — never by computing on a bare `DefaultX()` read:
+Consume a default via the combinators — never by computing on a bare
+`DefaultX()` read. No dispatch while the default is unchanged, one barrier
+dispatch after a change; zero-alloc when `f`'s result type doesn't depend on
+the default (a default-typed result boxes once at escape):
 
 ```julia
 with_default_type((T, x) -> T(x), 1.5)          # Binary8p2se(1.5 ≡ 0x2e)
