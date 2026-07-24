@@ -60,6 +60,60 @@ julia> Multiply(Binary8p4se, RNE_SatFinite, w, two)
 Binary8p4se(224.0 ≡ 0x7e)
 ```
 
+### Random values under a chosen projection
+
+`rand` and `randn` take a `projection` keyword on their scalar `::Type` forms.
+One underlying Float64 draw, landed on the format's grid four different ways —
+the seed fixes the draw, the projection decides the landing:
+
+```julia-repl
+julia> rand(Xoshiro(2), Float64)                # the underlying uniform draw
+0.0022505868897625403
+
+julia> rand(Xoshiro(2), Binary8p4se)            # default: floor (stays in [0,1))
+Binary8p4se(0.001953125 ≡ 0x02)
+
+julia> rand(Xoshiro(2), Binary8p4se; projection = RTP_SatNone)   # ceiling
+Binary8p4se(0.0029296875 ≡ 0x03)
+
+julia> rand(Xoshiro(2), Binary8p4se; projection = RNE_SatNone)   # nearest
+Binary8p4se(0.001953125 ≡ 0x02)
+
+julia> rand(Xoshiro(2), Binary8p4se; projection = RSA_SatNone(8))  # stochastic
+Binary8p4se(0.001953125 ≡ 0x02)
+```
+
+A stochastic projection draws its random bits from the *same* rng as the
+uniform draw, so seeded streams stay reproducible. Note the default is the
+contract-keeper: a nearest or upward projection can return exactly `1.0`
+(mass near the top rounds up), which is why floor is the default.
+
+The same keyword on `randn` — here the draw is `-1.9757…`:
+
+```julia-repl
+julia> randn(Xoshiro(6), Binary8p4se)           # default: nearest + SatFinite
+Binary8p4se(-2.0 ≡ 0xc8)
+
+julia> randn(Xoshiro(6), Binary8p4se; projection = RTZ_SatFinite)  # toward zero
+Binary8p4se(-1.875 ≡ 0xc7)
+```
+
+Where the saturation half of the default earns its keep: `Binary3p1se` has
+`MaxFinite = 1.0`, so normal tail draws overflow constantly. Seed 360 draws
+`z = 3.326…`:
+
+```julia-repl
+julia> randn(Xoshiro(360), Binary3p1se)         # SatFinite clamps the tail
+Binary3p1se(1.0 ≡ 0x02)
+
+julia> randn(Xoshiro(360), Binary3p1se; projection = RNE_SatNone)
+Binary3p1se(Inf ≡ 0x03)                         # opt out, get the overflow
+```
+
+The array and `!` forms (`rand(T, dims)`, `randn!(A)`, …) always use the
+defaults; for arrays under another projection, draw scalars:
+`[rand(rng, T; projection = ρ) for _ in 1:n]`.
+
 ## General AI
 
 ### Log-odds belief updating — and where tiny formats bite reasoning

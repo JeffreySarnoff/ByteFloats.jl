@@ -109,6 +109,9 @@ tails clamped to MaxFinite; `randn` signed formats only):
 rand(T); rand(T, dims); rand!(A)      # uniform on [0, 1)
 randn(T); randn(T, dims); randn!(A)   # standard normal, always finite
 rand(Xoshiro(1), T)                   # explicit rng as usual
+
+rand(rng, T;  projection=RTP_SatNone)   # scalar forms: land under any ProjSpec
+randn(rng, T; projection=RTZ_SatFinite) # (stochastic ρ draws R from same rng)
 ```
 
 Classification and stepping:

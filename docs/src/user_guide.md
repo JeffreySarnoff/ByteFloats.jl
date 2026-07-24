@@ -152,6 +152,14 @@ All derived forms work — `rand(T, dims)`, `rand!(A)`, `randn(T, dims)`,
 task-local default generator (a `Xoshiro`), so `Random.seed!` controls them as
 usual.
 
+The scalar `::Type` forms take a `projection` keyword to land the draw under any
+`ProjSpec` — `rand(rng, T; projection = RTP_SatNone)`,
+`randn(rng, T; projection = RTZ_SatFinite)`. A stochastic projection draws its
+random bits from the same rng, so seeded streams stay reproducible. The defaults
+are the contract-keepers (floor for `rand`, nearest + `SatFinite` for `randn`);
+opting out can produce `1.0` from `rand` or ±Inf/NaN from `randn`. Worked
+transcripts: [User Examples](@ref).
+
 ## Projection specifications
 
 Every rounding decision in the package is governed by a `ProjSpec`, the pair of a

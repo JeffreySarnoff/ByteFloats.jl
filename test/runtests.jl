@@ -1406,6 +1406,36 @@ end
     @test @allocated(sn(r)) == 0
     @test Base.return_types(sr, Tuple{Xoshiro}) == [T]
     @test Base.return_types(sn, Tuple{Xoshiro}) == [T]
+
+    # ---- the projection keyword (scalar ::Type methods only)
+    # explicit default ≡ implicit default, both functions, all four spellings
+    @test rand(Xoshiro(3), T; projection=RTZ_SatNone) === rand(Xoshiro(3), T)
+    @test randn(Xoshiro(3), T; projection=RNE_SatFinite) === randn(Xoshiro(3), T)
+    @test rand(T; projection=RTZ_SatNone) isa T
+    @test randn(T; projection=RNE_SatNone) isa T
+    # a non-default projection is the same draw, differently projected
+    r1, r2 = Xoshiro(7), Xoshiro(7)
+    @test all(rand(r1, T; projection=RTP_SatNone) ===
+              Convert(T, RTP_SatNone, rand(r2, Float64)) for _ in 1:2_000)
+    r1, r2 = Xoshiro(7), Xoshiro(7)
+    @test all(randn(r1, T; projection=RTZ_SatFinite) ===
+              Convert(T, RTZ_SatFinite, randn(r2)) for _ in 1:2_000)
+    # stochastic projections draw R from the SAME rng: seeded streams reproduce
+    σ8 = RSA_SatNone(8)
+    draws(seed) = [codepoint(rand(Xoshiro(seed), T; projection=σ8)) for _ in 1:50]
+    @test draws(5) == draws(5)
+    @test draws(5) != draws(6)
+    ndraws(seed) = [codepoint(randn(Xoshiro(seed), T; projection=σ8)) for _ in 1:50]
+    @test ndraws(5) == ndraws(5)
+    # unsigned randn throws on the keyword spelling too
+    @test_throws ArgumentError randn(Xoshiro(1), Binary6p3ue; projection=RNE_SatFinite)
+    # keyword path stays allocation-free and concretely inferred
+    srk(rng) = rand(rng, T; projection=RTZ_SatNone); srk(r)
+    snk(rng) = randn(rng, T; projection=RNE_SatFinite); snk(r)
+    @test @allocated(srk(r)) == 0
+    @test @allocated(snk(r)) == 0
+    @test Base.return_types(srk, Tuple{Xoshiro}) == [T]
+    @test Base.return_types(snk, Tuple{Xoshiro}) == [T]
 end
 
 # ==========================================================================
