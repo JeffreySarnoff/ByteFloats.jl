@@ -12,7 +12,7 @@ using ByteFloats
 makedocs(;
     sitename = "ByteFloats.jl",
     modules = [ByteFloats],
-    authors = "ByteFloats.jl contributors",
+    authors = "Jeffrey Sarnoff",
     build = "build_latex",
     format = Documenter.LaTeX(platform = "none", version = v"0.1.0"),
     remotes = nothing,

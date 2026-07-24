@@ -9,7 +9,7 @@ using ByteFloats
 makedocs(;
     sitename = "ByteFloats.jl",
     modules = [ByteFloats],
-    authors = "ByteFloats.jl contributors",
+    authors = "Jeffrey Sarnoff",
     build = get(ENV, "DOCS_BUILD_DIR", "build"),
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", nothing) == "true",
